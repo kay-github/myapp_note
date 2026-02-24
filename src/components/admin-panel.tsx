@@ -1,0 +1,246 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type SpaceInfo = {
+  id: string;
+  title: string;
+  slug: string;
+  hasPassword: boolean;
+  assetCount: number;
+  updatedAt: string;
+};
+
+type Props = {
+  authed: boolean;
+  spaces: SpaceInfo[];
+};
+
+export function AdminPanel({ authed, spaces }: Props) {
+  const router = useRouter();
+  const [adminPwd, setAdminPwd] = useState("");
+  const [status, setStatus] = useState("");
+  const [title, setTitle] = useState("");
+  const [slug, setSlug] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function unlockAdmin(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch("/api/admin/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminPwd }),
+      });
+      if (!res.ok) {
+        throw new Error("超管密码错误");
+      }
+      setStatus("超管验证成功");
+      setAdminPwd("");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "验证失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createSpace(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch("/api/admin/spaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, slug, password }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "创建失败");
+      }
+      setTitle("");
+      setSlug("");
+      setPassword("");
+      setStatus("空间创建成功");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "创建失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateSpace(spaceId: string, patch: Record<string, string>) {
+    setBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch("/api/admin/spaces", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spaceId, ...patch }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "更新失败");
+      }
+      setStatus("空间已更新");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "更新失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeSpace(spaceId: string) {
+    if (!confirm("删除后不可恢复，确认继续？")) {
+      return;
+    }
+
+    setBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch("/api/admin/spaces", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spaceId }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "删除失败");
+      }
+      setStatus("空间已删除");
+      router.refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "删除失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/admin/logout", { method: "POST" });
+    router.refresh();
+  }
+
+  if (!authed) {
+    return (
+      <section className="panel p-6">
+        <h1 className="text-2xl font-semibold">管理台</h1>
+        <p className="mt-2 text-sm text-[var(--ink-1)]">输入超管密码后可创建空间、修改路径和密码。</p>
+        <form className="mt-4 flex flex-col gap-3 sm:flex-row" onSubmit={unlockAdmin}>
+          <input
+            className="field"
+            onChange={(e) => setAdminPwd(e.target.value)}
+            placeholder="输入超管密码"
+            type="password"
+            value={adminPwd}
+          />
+          <button className="btn btn-primary" disabled={busy} type="submit">
+            验证
+          </button>
+        </form>
+        {status && <p className="mt-3 text-sm text-[var(--ink-1)]">{status}</p>}
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <header className="panel p-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">管理台</h1>
+          <button className="btn btn-ghost" onClick={logout} type="button">
+            退出超管
+          </button>
+        </div>
+        <p className="mt-2 text-sm text-[var(--ink-1)]">已验证超管密码，可免密进入并管理所有空间。</p>
+      </header>
+
+      <form className="panel grid gap-3 p-4 sm:grid-cols-4" onSubmit={createSpace}>
+        <input
+          className="field"
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="空间标题"
+          value={title}
+        />
+        <input
+          className="field font-mono"
+          onChange={(e) => setSlug(e.target.value)}
+          placeholder="路径 slug"
+          value={slug}
+        />
+        <input
+          className="field"
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="空间密码"
+          type="text"
+          value={password}
+        />
+        <button className="btn btn-primary" disabled={busy} type="submit">
+          创建空间
+        </button>
+      </form>
+
+      <div className="space-y-3">
+        {spaces.map((space) => (
+          <div className="panel p-4" key={space.id}>
+            <p className="text-lg font-semibold">{space.title}</p>
+            <p className="font-mono text-xs text-[var(--ink-1)]">/{space.slug}</p>
+            <p className="mt-1 text-xs text-[var(--ink-1)]">
+              附件 {space.assetCount} 个 · 最近更新 {new Date(space.updatedAt).toLocaleString("zh-CN")}
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  const value = prompt("输入新标题", space.title);
+                  if (value) {
+                    updateSpace(space.id, { title: value });
+                  }
+                }}
+                type="button"
+              >
+                改标题
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  const value = prompt("输入新路径（仅字母数字-_）", space.slug);
+                  if (value) {
+                    updateSpace(space.id, { slug: value });
+                  }
+                }}
+                type="button"
+              >
+                改路径
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  const value = prompt("输入新密码（留空则清除）", "");
+                  if (value !== null) {
+                    updateSpace(space.id, { password: value });
+                  }
+                }}
+                type="button"
+              >
+                {space.hasPassword ? "改密码" : "设密码"}
+              </button>
+              <button className="btn btn-danger" onClick={() => removeSpace(space.id)} type="button">
+                删除空间
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {status && <p className="text-sm text-[var(--ink-1)]">{status}</p>}
+    </section>
+  );
+}
