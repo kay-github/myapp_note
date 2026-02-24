@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canWriteSpace } from "@/lib/space-permission";
+import { canReadSpace, canWriteSpace } from "@/lib/space-permission";
 import { prisma } from "@/lib/prisma";
 import { getClientIp } from "@/lib/request";
 import { writeAudit } from "@/lib/audit";
@@ -9,9 +9,13 @@ type Context = { params: Promise<{ slug: string; assetId: string }> };
 export async function GET(_: Request, { params }: Context) {
   const { slug, assetId } = await params;
 
-  const space = await prisma.space.findUnique({ where: { slug }, select: { id: true } });
+  const space = await prisma.space.findUnique({ where: { slug } });
   if (!space) {
     return new NextResponse("Space not found", { status: 404 });
+  }
+
+  if (!(await canReadSpace(space))) {
+    return new NextResponse("Read permission required", { status: 401 });
   }
 
   const asset = await prisma.asset.findFirst({

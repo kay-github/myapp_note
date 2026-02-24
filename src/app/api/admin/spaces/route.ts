@@ -13,14 +13,14 @@ const slugPattern = /^[a-zA-Z0-9_-]{3,30}$/;
 const createSchema = z.object({
   title: z.string().trim().min(1).max(60),
   slug: z.string().trim().regex(slugPattern),
-  password: z.string().trim().min(1).max(40).optional(),
+  password: z.string().trim().min(1).max(40),
 });
 
 const updateSchema = z.object({
   spaceId: z.string().min(1),
   title: z.string().trim().min(1).max(60).optional(),
   slug: z.string().trim().regex(slugPattern).optional(),
-  password: z.string().trim().max(40).optional(),
+  password: z.string().trim().min(1).max(40).optional(),
 });
 
 const deleteSchema = z.object({
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   }
 
   const payload = parsed.data;
-  const passwordHash = payload.password ? await hashPassword(payload.password) : null;
+  const passwordHash = await hashPassword(payload.password);
 
   try {
     const space = await prisma.space.create({
@@ -90,7 +90,7 @@ export async function PATCH(req: Request) {
   if (payload.title !== undefined) updateData.title = payload.title;
   if (payload.slug !== undefined) updateData.slug = payload.slug;
   if (payload.password !== undefined) {
-    updateData.passwordHash = payload.password ? await hashPassword(payload.password) : null;
+    updateData.passwordHash = await hashPassword(payload.password);
   }
 
   if (Object.keys(updateData).length === 0) {

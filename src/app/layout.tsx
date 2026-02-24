@@ -13,8 +13,8 @@ const sourceCodePro = Source_Code_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "Quick Space",
-  description: "跨设备临时文本与文件中转空间",
+  title: "免登录临时笔记本",
+  description: "输入空间密码即可访问、复制和下载内容的临时笔记空间",
 };
 
 export default function RootLayout({

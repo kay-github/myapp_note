@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ensureDefaultSpace } from "@/lib/bootstrap";
-import { isAdminAuthed, canWriteWithSpaceCookie } from "@/lib/auth";
+import { APP_CONFIG } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { SpaceView } from "@/components/space-view";
+import { canReadSpace, canWriteSpace } from "@/lib/space-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,9 @@ export default async function SpacePage({ params }: Props) {
     notFound();
   }
 
-  const admin = await isAdminAuthed();
-  const spaceWrite = admin || (await canWriteWithSpaceCookie(slug));
+  const isPublicSpace = space.slug === APP_CONFIG.defaultSpaceSlug;
+  const canRead = await canReadSpace(space);
+  const canWrite = await canWriteSpace(space);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
@@ -36,25 +38,28 @@ export default async function SpacePage({ params }: Props) {
         <Link className="btn btn-ghost" href="/">
           返回首页
         </Link>
-        <Link className="btn btn-ghost" href="/admin">
-          管理台
-        </Link>
       </div>
 
       <SpaceView
         slug={space.slug}
         title={space.title}
-        note={space.note?.content || ""}
-        canWrite={spaceWrite}
+        note={canRead ? space.note?.content || "" : ""}
+        canRead={canRead}
+        canWrite={canWrite}
         hasPassword={Boolean(space.passwordHash)}
-        isAdmin={admin}
-        assets={space.assets.map((asset) => ({
-          id: asset.id,
-          name: asset.name,
-          mimeType: asset.mimeType,
-          size: asset.size,
-          createdAt: asset.createdAt.toISOString(),
-        }))}
+        requiresEntryPassword={!isPublicSpace}
+        isPublicSpace={isPublicSpace}
+        assets={
+          canRead
+            ? space.assets.map((asset) => ({
+                id: asset.id,
+                name: asset.name,
+                mimeType: asset.mimeType,
+                size: asset.size,
+                createdAt: asset.createdAt.toISOString(),
+              }))
+            : []
+        }
       />
     </main>
   );

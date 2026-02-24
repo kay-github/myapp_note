@@ -15,7 +15,7 @@ export async function ensureDefaultSpace(): Promise<void> {
     data: {
       slug: APP_CONFIG.defaultSpaceSlug,
       title: APP_CONFIG.defaultSpaceTitle,
-      note: { create: { content: "欢迎使用 Quick Space。" } },
+      note: { create: { content: "欢迎使用免登录临时笔记本。" } },
     },
   });
 }

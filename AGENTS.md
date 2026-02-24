@@ -4,38 +4,38 @@
 
 - Name: `quick-space`
 - Type: Next.js web app (App Router, TypeScript)
-- Goal: Fast cross-device transfer workspace with password-gated write access.
-- Primary UX:
-  - List all spaces on home page.
-  - Read/copy content without login.
-  - Write/upload/paste-image after space password verification.
-  - Admin password unlocks full management.
+- Goal: Multi-space temporary notebook for cross-device sharing without account login.
+- Current product headline: `免登录临时笔记本`
 
-## 2) Product Rules (Current)
+## 2) Core Product Rules (Latest)
 
-- All spaces are visible on `/`.
-- Space write permission:
-  - Admin session => can write all spaces.
-  - Space session (unlocked by space password) => can write that space.
-  - No session => read-only.
-- File upload max size: `10MB`.
-- Slug rule: `^[a-zA-Z0-9_-]{3,30}$` and globally unique.
-- Public direct asset access is enabled via API URL.
+- Home (`/`) shows all space titles and paths.
+- Admin entry is hidden from front pages (admin route still exists at `/admin`).
+- Access model:
+  - Public space (`DEFAULT_SPACE_SLUG`) can be opened directly for read/copy/download.
+  - Public space editing requires password verification (click `编辑` then verify).
+  - Non-public spaces require space password before content is visible.
+- All content inside accessible spaces can be read/copied/downloaded.
+- Upload max size: `10MB` per file.
+- Supported content blocks in space detail:
+  - Text
+  - Images
+  - Videos (preview + download)
+  - Files
 
 ## 3) Stack and Runtime
 
-- Framework: Next.js 16 + React 19
-- Package manager: Bun
-- ORM: Prisma
-- Database: PostgreSQL
-- Password hashing: `bcryptjs`
-- Validation: `zod`
+- Next.js 16 + React 19
+- Bun package manager
+- Prisma ORM + PostgreSQL
+- `bcryptjs` for password hash
+- `zod` for API payload validation
 
-## 4) High-Level Architecture
+## 4) Architecture Overview
 
 - Server pages:
-  - `src/app/page.tsx` => space list
-  - `src/app/[slug]/page.tsx` => space detail/editor
+  - `src/app/page.tsx` => home list
+  - `src/app/[slug]/page.tsx` => space detail
   - `src/app/admin/page.tsx` => admin console
 - Client components:
   - `src/components/space-view.tsx`
@@ -52,28 +52,26 @@
     - `POST /api/spaces/[slug]/assets`
     - `GET|DELETE /api/spaces/[slug]/assets/[assetId]`
 
-## 5) Data Model (Prisma)
+## 5) Permission Model
 
-- `Space`: title, slug, optional passwordHash, timestamps
-- `Note`: one-to-one with space, plain content
-- `Asset`: file metadata + binary bytes
-- `AuditLog`: action history with actor/ip/detail
+- Admin session => full read/write for all spaces.
+- Space session cookie (`qs_space_<slug>`) => read/write for that private space.
+- Public space read is always allowed.
+- Public/private write always requires either admin session or valid space password session.
+- Private asset GET is protected by read permission; public asset GET remains open through public-space read policy.
+
+## 6) Data Model
+
+- `Space`: `title`, `slug`, `passwordHash`, timestamps
+- `Note`: one-to-one space plain text content
+- `Asset`: binary data + `mimeType`, `name`, `size`
+- `AuditLog`: action, actor, ip, detail, timestamps
 
 Schema file: `prisma/schema.prisma`
 
-## 6) Security and Session Notes
-
-- Admin and space sessions are cookie-based and HMAC-signed.
-- Utility: `src/lib/auth.ts`
-- Password verification:
-  - Admin password from env (`ADMIN_PASSWORD`)
-  - Space password hash stored in DB
-- Lightweight in-memory rate limit exists (`src/lib/ratelimit.ts`).
-  - For multi-instance production, replace with Redis/Upstash.
-
 ## 7) Environment Variables
 
-Required (see `.env.example`):
+Required:
 
 - `DATABASE_URL`
 - `ADMIN_PASSWORD`
@@ -81,35 +79,34 @@ Required (see `.env.example`):
 - `DEFAULT_SPACE_SLUG`
 - `DEFAULT_SPACE_TITLE`
 
-## 8) Local Development Runbook
+Vercel fallback support is implemented for injected Postgres variables:
 
-1. Install deps: `bun install`
-2. Generate Prisma client: `bun run prisma:generate`
-3. Push schema: `bun run prisma:push`
-4. Start dev server: `bun run dev`
+- `POSTGRES_PRISMA_URL`
+- `POSTGRES_URL`
+- `POSTGRES_PRISMA_POSTGRES_URL`
+- `POSTGRES_PRISMA_PRISMA_DATABASE_URL`
 
-Quality checks:
+## 8) Local Dev Runbook
 
-- Lint: `bun run lint`
-- Type check: `bunx tsc --noEmit`
+1. `bun install`
+2. `bun run prisma:generate`
+3. `bun run prisma:push`
+4. `bun run dev`
 
-## 9) Deploy Notes (Vercel)
+Checks:
 
-- Works on Vercel with external Postgres.
-- Current asset storage is DB binary (MVP-friendly, not long-term ideal).
-- If traffic/files grow, migrate assets to object storage (Supabase Storage or Vercel Blob).
+- `bun run lint`
+- `bunx tsc --noEmit`
 
-## 10) Coding and Change Conventions
+## 9) Deployment Notes
 
-- Keep write-access checks centralized via `canWriteSpace`.
-- Validate all API payloads with `zod`.
-- Log sensitive actions using `writeAudit`.
-- Do not commit `.env` or secrets.
-- Preserve slug uniqueness and rule validation when editing admin APIs.
+- Build script runs Prisma generate + db push before Next build.
+- On Vercel, ensure actual values exist (not empty placeholders) for env vars.
+- If runtime shows app error page, check Function Runtime Logs first.
 
-## 11) Known Limitations / Next Upgrades
+## 10) Coding Conventions
 
-- In-memory rate limit resets on restart and is not distributed.
-- Asset bytes in DB increase DB size quickly.
-- No user account system (by design).
-- No background cleanup (content is permanent until manual delete).
+- Keep permission checks centralized in `src/lib/space-permission.ts`.
+- Validate API input with `zod`.
+- Persist security-sensitive operations to `AuditLog`.
+- Do not expose or commit secrets/tokens.

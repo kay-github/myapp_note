@@ -178,9 +178,10 @@ export function AdminPanel({ authed, spaces }: Props) {
         <input
           className="field"
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="空间密码"
+          placeholder="空间密码（必填）"
           type="text"
           value={password}
+          required
         />
         <button className="btn btn-primary" disabled={busy} type="submit">
           创建空间
@@ -223,8 +224,8 @@ export function AdminPanel({ authed, spaces }: Props) {
               <button
                 className="btn btn-ghost"
                 onClick={() => {
-                  const value = prompt("输入新密码（留空则清除）", "");
-                  if (value !== null) {
+                  const value = prompt("输入新密码", "");
+                  if (value && value.trim()) {
                     updateSpace(space.id, { password: value });
                   }
                 }}
