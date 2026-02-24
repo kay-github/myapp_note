@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardEvent, FormEvent, useCallback, useMemo, useState } from "react";
+import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { TopToast, ToastTone } from "@/components/top-toast";
@@ -48,6 +48,10 @@ export function SpaceView({
   const [password, setPassword] = useState("");
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [showEditAuth, setShowEditAuth] = useState(false);
+
+  useEffect(() => {
+    setText(note);
+  }, [note, slug]);
 
   const notify = useCallback((message: string, tone: ToastTone = "info") => {
     setToast({ message, tone });
