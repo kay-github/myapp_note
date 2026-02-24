@@ -1,8 +1,9 @@
 "use client";
 
-import { ClipboardEvent, FormEvent, useMemo, useState } from "react";
+import { ClipboardEvent, FormEvent, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { TopToast, ToastTone } from "@/components/top-toast";
 
 type AssetItem = {
   id: string;
@@ -45,8 +46,12 @@ export function SpaceView({
   const [text, setText] = useState(note);
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [showEditAuth, setShowEditAuth] = useState(false);
+
+  const notify = useCallback((message: string, tone: ToastTone = "info") => {
+    setToast({ message, tone });
+  }, []);
 
   const images = useMemo(() => assets.filter((v) => v.mimeType.startsWith("image/")), [assets]);
   const videos = useMemo(() => assets.filter((v) => v.mimeType.startsWith("video/")), [assets]);
@@ -58,7 +63,6 @@ export function SpaceView({
   async function unlockSpace(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch(`/api/spaces/${slug}/unlock`, {
         method: "POST",
@@ -70,10 +74,10 @@ export function SpaceView({
       }
       setPassword("");
       setShowEditAuth(false);
-      setStatus(canRead ? "编辑权限已开启" : "验证成功，正在进入空间");
+      notify(canRead ? "编辑权限已开启" : "验证成功，正在进入空间", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "验证失败");
+      notify(error instanceof Error ? error.message : "验证失败", "error");
     } finally {
       setBusy(false);
     }
@@ -81,7 +85,6 @@ export function SpaceView({
 
   async function saveNote() {
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch(`/api/spaces/${slug}/note`, {
         method: "PUT",
@@ -91,10 +94,10 @@ export function SpaceView({
       if (!res.ok) {
         throw new Error("保存失败，请确认密码权限");
       }
-      setStatus("文本已保存");
+      notify("文本已保存", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "保存失败");
+      notify(error instanceof Error ? error.message : "保存失败", "error");
     } finally {
       setBusy(false);
     }
@@ -105,7 +108,6 @@ export function SpaceView({
       return;
     }
     setBusy(true);
-    setStatus("");
     try {
       for (const file of Array.from(fileList)) {
         const form = new FormData();
@@ -118,10 +120,10 @@ export function SpaceView({
           throw new Error(`${file.name} 上传失败`);
         }
       }
-      setStatus("文件上传完成");
+      notify("文件上传完成", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "上传失败");
+      notify(error instanceof Error ? error.message : "上传失败", "error");
     } finally {
       setBusy(false);
     }
@@ -146,7 +148,6 @@ export function SpaceView({
     form.set("file", file, `pasted-${Date.now()}.png`);
 
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch(`/api/spaces/${slug}/assets`, {
         method: "POST",
@@ -155,10 +156,10 @@ export function SpaceView({
       if (!res.ok) {
         throw new Error("粘贴图片上传失败");
       }
-      setStatus("图片已粘贴并保存");
+      notify("图片已粘贴并保存", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "图片保存失败");
+      notify(error instanceof Error ? error.message : "图片保存失败", "error");
     } finally {
       setBusy(false);
     }
@@ -170,7 +171,6 @@ export function SpaceView({
     }
 
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch(`/api/spaces/${slug}/assets/${assetId}`, {
         method: "DELETE",
@@ -178,10 +178,10 @@ export function SpaceView({
       if (!res.ok) {
         throw new Error("删除失败");
       }
-      setStatus("资源已删除");
+      notify("资源已删除", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "删除失败");
+      notify(error instanceof Error ? error.message : "删除失败", "error");
     } finally {
       setBusy(false);
     }
@@ -189,6 +189,8 @@ export function SpaceView({
 
   return (
     <section className="space-y-4">
+      {toast && <TopToast message={toast.message} onClose={() => setToast(null)} tone={toast.tone} />}
+
       <header className="panel p-5">
         <h1 className="text-2xl font-semibold">{title}</h1>
         <p className="mt-1 font-mono text-xs text-[var(--ink-1)]">/{slug}</p>
@@ -222,9 +224,7 @@ export function SpaceView({
         )
       )}
 
-      {!canRead ? (
-        status ? <p className="text-sm text-[var(--ink-1)]">{status}</p> : null
-      ) : (
+      {!canRead ? null : (
         <>
           {!canWrite && (
             <div className="panel p-4">
@@ -413,8 +413,6 @@ export function SpaceView({
               ))}
             </div>
           </article>
-
-          {status && <p className="text-sm text-[var(--ink-1)]">{status}</p>}
         </>
       )}
     </section>

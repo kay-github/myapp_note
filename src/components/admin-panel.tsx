@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import { TopToast, ToastTone } from "@/components/top-toast";
 
 type SpaceInfo = {
   id: string;
@@ -20,16 +21,19 @@ type Props = {
 export function AdminPanel({ authed, spaces }: Props) {
   const router = useRouter();
   const [adminPwd, setAdminPwd] = useState("");
-  const [status, setStatus] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const notify = useCallback((message: string, tone: ToastTone = "info") => {
+    setToast({ message, tone });
+  }, []);
+
   async function unlockAdmin(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch("/api/admin/unlock", {
         method: "POST",
@@ -39,11 +43,11 @@ export function AdminPanel({ authed, spaces }: Props) {
       if (!res.ok) {
         throw new Error("超管密码错误");
       }
-      setStatus("超管验证成功");
+      notify("超管验证成功", "success");
       setAdminPwd("");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "验证失败");
+      notify(error instanceof Error ? error.message : "验证失败", "error");
     } finally {
       setBusy(false);
     }
@@ -52,7 +56,6 @@ export function AdminPanel({ authed, spaces }: Props) {
   async function createSpace(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch("/api/admin/spaces", {
         method: "POST",
@@ -66,10 +69,10 @@ export function AdminPanel({ authed, spaces }: Props) {
       setTitle("");
       setSlug("");
       setPassword("");
-      setStatus("空间创建成功");
+      notify("空间创建成功", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "创建失败");
+      notify(error instanceof Error ? error.message : "创建失败", "error");
     } finally {
       setBusy(false);
     }
@@ -77,7 +80,6 @@ export function AdminPanel({ authed, spaces }: Props) {
 
   async function updateSpace(spaceId: string, patch: Record<string, string>) {
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch("/api/admin/spaces", {
         method: "PATCH",
@@ -88,10 +90,10 @@ export function AdminPanel({ authed, spaces }: Props) {
         const text = await res.text();
         throw new Error(text || "更新失败");
       }
-      setStatus("空间已更新");
+      notify("空间设置已更新", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "更新失败");
+      notify(error instanceof Error ? error.message : "更新失败", "error");
     } finally {
       setBusy(false);
     }
@@ -103,7 +105,6 @@ export function AdminPanel({ authed, spaces }: Props) {
     }
 
     setBusy(true);
-    setStatus("");
     try {
       const res = await fetch("/api/admin/spaces", {
         method: "DELETE",
@@ -114,10 +115,10 @@ export function AdminPanel({ authed, spaces }: Props) {
         const text = await res.text();
         throw new Error(text || "删除失败");
       }
-      setStatus("空间已删除");
+      notify("空间已删除", "success");
       router.refresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "删除失败");
+      notify(error instanceof Error ? error.message : "删除失败", "error");
     } finally {
       setBusy(false);
     }
@@ -125,33 +126,38 @@ export function AdminPanel({ authed, spaces }: Props) {
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
+    notify("已退出超管", "info");
     router.refresh();
   }
 
   if (!authed) {
     return (
-      <section className="panel p-6">
-        <h1 className="text-2xl font-semibold">管理台</h1>
-        <p className="mt-2 text-sm text-[var(--ink-1)]">输入超管密码后可创建空间、修改路径和密码。</p>
-        <form className="mt-4 flex flex-col gap-3 sm:flex-row" onSubmit={unlockAdmin}>
-          <input
-            className="field"
-            onChange={(e) => setAdminPwd(e.target.value)}
-            placeholder="输入超管密码"
-            type="password"
-            value={adminPwd}
-          />
-          <button className="btn btn-primary" disabled={busy} type="submit">
-            验证
-          </button>
-        </form>
-        {status && <p className="mt-3 text-sm text-[var(--ink-1)]">{status}</p>}
-      </section>
+      <>
+        {toast && <TopToast message={toast.message} onClose={() => setToast(null)} tone={toast.tone} />}
+        <section className="panel p-6">
+          <h1 className="text-2xl font-semibold">管理台</h1>
+          <p className="mt-2 text-sm text-[var(--ink-1)]">输入超管密码后可创建空间、修改路径和密码。</p>
+          <form className="mt-4 flex flex-col gap-3 sm:flex-row" onSubmit={unlockAdmin}>
+            <input
+              className="field"
+              onChange={(e) => setAdminPwd(e.target.value)}
+              placeholder="输入超管密码"
+              type="password"
+              value={adminPwd}
+            />
+            <button className="btn btn-primary" disabled={busy} type="submit">
+              验证
+            </button>
+          </form>
+        </section>
+      </>
     );
   }
 
   return (
     <section className="space-y-4">
+      {toast && <TopToast message={toast.message} onClose={() => setToast(null)} tone={toast.tone} />}
+
       <header className="panel p-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">管理台</h1>
@@ -240,8 +246,6 @@ export function AdminPanel({ authed, spaces }: Props) {
           </div>
         ))}
       </div>
-
-      {status && <p className="text-sm text-[var(--ink-1)]">{status}</p>}
     </section>
   );
 }

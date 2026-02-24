@@ -22,6 +22,7 @@
   - Images
   - Videos (preview + download)
   - Files
+- User feedback uses top-center auto-dismiss toast notifications for save/upload/auth/update outcomes.
 
 ## 3) Stack and Runtime
 
