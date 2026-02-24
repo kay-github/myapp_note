@@ -48,3 +48,5 @@ bun run dev
 
 - 推荐使用免费的外部 PostgreSQL（如 Supabase/Neon）
 - 当前文件存数据库，后续若附件量变大建议切换对象存储（Supabase Storage / Vercel Blob）
+- 构建脚本会自动执行 `prisma db push`，确保生产库表结构存在
+- 若线上出现 `Application error`，先检查 Vercel 环境变量是否已配置：`DATABASE_URL`、`ADMIN_PASSWORD`、`SESSION_SECRET`
