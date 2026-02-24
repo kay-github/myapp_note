@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && DATABASE_URL=${DATABASE_URL:-$POSTGRES_PRISMA_URL} prisma db push && next build",
+    "build": "prisma generate && DATABASE_URL=${DATABASE_URL:-${POSTGRES_PRISMA_URL:-${POSTGRES_URL:-${POSTGRES_PRISMA_POSTGRES_URL:-$POSTGRES_PRISMA_PRISMA_DATABASE_URL}}}} prisma db push && next build",
     "start": "next start",
     "lint": "eslint",
     "prisma:generate": "prisma generate",
