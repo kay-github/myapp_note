@@ -15,6 +15,10 @@ const sourceCodePro = Source_Code_Pro({
 export const metadata: Metadata = {
   title: "免登录临时笔记本",
   description: "输入空间密码即可访问、复制和下载内容的临时笔记空间",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
