@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { del } from "@vercel/blob";
 import { canReadSpace, canWriteSpace } from "@/lib/space-permission";
 import { prisma } from "@/lib/prisma";
 import { getClientIp } from "@/lib/request";
@@ -27,6 +28,14 @@ export async function GET(_: Request, { params }: Context) {
     return new NextResponse("Asset not found", { status: 404 });
   }
 
+  if (asset.storage === "blob" && asset.blobUrl) {
+    return NextResponse.redirect(asset.blobUrl);
+  }
+
+  if (!asset.data) {
+    return new NextResponse("Asset payload missing", { status: 404 });
+  }
+
   const payload = decryptBytes(asset.data);
   return new NextResponse(new Uint8Array(payload), {
     headers: {
@@ -47,6 +56,23 @@ export async function DELETE(_: Request, { params }: Context) {
 
   if (!(await canWriteSpace(space))) {
     return new NextResponse("Write permission required", { status: 401 });
+  }
+
+  const target = await prisma.asset.findFirst({
+    where: { id: assetId, spaceId: space.id },
+    select: { id: true, blobUrl: true, storage: true },
+  });
+
+  if (!target) {
+    return new NextResponse("Asset not found", { status: 404 });
+  }
+
+  if (target.storage === "blob" && target.blobUrl) {
+    try {
+      await del(target.blobUrl);
+    } catch {
+      return new NextResponse("Failed to remove blob", { status: 500 });
+    }
   }
 
   const deleted = await prisma.asset.deleteMany({

@@ -4,6 +4,7 @@ import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useState } 
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { TopToast, ToastTone } from "@/components/top-toast";
+import { upload } from "@vercel/blob/client";
 
 type AssetItem = {
   id: string;
@@ -64,6 +65,35 @@ export function SpaceView({
     [assets],
   );
 
+  async function uploadViaFallbackApi(file: File, originalName?: string): Promise<void> {
+    const form = new FormData();
+    form.set("file", file, originalName || file.name);
+    const res = await fetch(`/api/spaces/${slug}/assets`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      throw new Error(`${originalName || file.name} 上传失败`);
+    }
+  }
+
+  async function uploadOneFile(file: File, originalName?: string): Promise<void> {
+    try {
+      await upload(originalName || file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload",
+        clientPayload: JSON.stringify({
+          slug,
+          originalName: originalName || file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+        }),
+      });
+    } catch {
+      await uploadViaFallbackApi(file, originalName);
+    }
+  }
+
   async function unlockSpace(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -114,15 +144,7 @@ export function SpaceView({
     setBusy(true);
     try {
       for (const file of Array.from(fileList)) {
-        const form = new FormData();
-        form.set("file", file);
-        const res = await fetch(`/api/spaces/${slug}/assets`, {
-          method: "POST",
-          body: form,
-        });
-        if (!res.ok) {
-          throw new Error(`${file.name} 上传失败`);
-        }
+        await uploadOneFile(file);
       }
       notify("文件上传完成", "success");
       router.refresh();
@@ -148,18 +170,10 @@ export function SpaceView({
     }
     e.preventDefault();
 
-    const form = new FormData();
-    form.set("file", file, `pasted-${Date.now()}.png`);
-
     setBusy(true);
     try {
-      const res = await fetch(`/api/spaces/${slug}/assets`, {
-        method: "POST",
-        body: form,
-      });
-      if (!res.ok) {
-        throw new Error("粘贴图片上传失败");
-      }
+      const pastedName = `pasted-${Date.now()}.png`;
+      await uploadOneFile(file, pastedName);
       notify("图片已粘贴并保存", "success");
       router.refresh();
     } catch (error) {

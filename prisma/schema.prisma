@@ -40,7 +40,9 @@ model Asset {
   name      String
   mimeType  String
   size      Int
-  data      Bytes
+  data      Bytes?
+  blobUrl   String?
+  storage   String   @default("db")
   createdAt DateTime @default(now())
 
   spaceId String

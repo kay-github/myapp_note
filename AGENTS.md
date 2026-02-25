@@ -17,6 +17,7 @@
   - Non-public spaces require space password before content is visible.
 - All content inside accessible spaces can be read/copied/downloaded.
 - Upload max size: `50MB` per file.
+- File upload path prefers Vercel Blob direct upload to avoid serverless request-body limits.
 - Supported content blocks in space detail:
   - Text
   - Images
@@ -29,6 +30,7 @@
 - Next.js 16 + React 19
 - Bun package manager
 - Prisma ORM + PostgreSQL
+- Vercel Blob for large asset objects
 - `bcryptjs` for password hash
 - `zod` for API payload validation
 
@@ -65,7 +67,7 @@
 
 - `Space`: `title`, `slug`, `passwordHash`, timestamps
 - `Note`: one-to-one space text content (stored encrypted at application layer)
-- `Asset`: binary data + `mimeType`, `name`, `size` (binary payload stored encrypted at application layer)
+- `Asset`: metadata + storage marker (`blob` or `db`) and optional `blobUrl`; DB payload remains encrypted when used.
 - `AuditLog`: action, actor, ip, detail, timestamps
 
 Schema file: `prisma/schema.prisma`
@@ -78,6 +80,7 @@ Required:
 - `ADMIN_PASSWORD`
 - `SESSION_SECRET`
 - `DATA_ENCRYPTION_KEY`
+- `BLOB_READ_WRITE_TOKEN` (required for Vercel Blob direct upload in production)
 - `DEFAULT_SPACE_SLUG`
 - `DEFAULT_SPACE_TITLE`
 
@@ -112,4 +115,5 @@ Checks:
 - Validate API input with `zod`.
 - Persist security-sensitive operations to `AuditLog`.
 - Keep note/asset storage encrypted using helpers in `src/lib/crypto.ts`.
+- Keep DB-fallback asset storage encrypted using helpers in `src/lib/crypto.ts`.
 - Do not expose or commit secrets/tokens.
