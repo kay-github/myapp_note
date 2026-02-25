@@ -83,6 +83,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json(jsonResponse);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload token generation failed";
+    console.error("[blob-upload]", message);
     return new NextResponse(message, { status: 400 });
   }
 }

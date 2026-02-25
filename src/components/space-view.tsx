@@ -94,6 +94,12 @@ export function SpaceView({
     }
   }
 
+  async function refreshAfterBlobSync(): Promise<void> {
+    router.refresh();
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    router.refresh();
+  }
+
   async function unlockSpace(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -146,8 +152,8 @@ export function SpaceView({
       for (const file of Array.from(fileList)) {
         await uploadOneFile(file);
       }
-      notify("文件上传完成", "success");
-      router.refresh();
+      notify("上传完成，正在同步列表", "success");
+      await refreshAfterBlobSync();
     } catch (error) {
       notify(error instanceof Error ? error.message : "上传失败", "error");
     } finally {
@@ -174,8 +180,8 @@ export function SpaceView({
     try {
       const pastedName = `pasted-${Date.now()}.png`;
       await uploadOneFile(file, pastedName);
-      notify("图片已粘贴并保存", "success");
-      router.refresh();
+      notify("图片已上传，正在同步列表", "success");
+      await refreshAfterBlobSync();
     } catch (error) {
       notify(error instanceof Error ? error.message : "图片保存失败", "error");
     } finally {
