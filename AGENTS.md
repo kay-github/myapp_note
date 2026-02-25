@@ -16,7 +16,7 @@
   - Public space editing requires password verification (click `编辑` then verify).
   - Non-public spaces require space password before content is visible.
 - All content inside accessible spaces can be read/copied/downloaded.
-- Upload max size: `10MB` per file.
+- Upload max size: `50MB` per file.
 - Supported content blocks in space detail:
   - Text
   - Images

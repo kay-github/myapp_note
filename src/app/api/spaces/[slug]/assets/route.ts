@@ -27,7 +27,7 @@ export async function POST(req: Request, { params }: Context) {
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return new NextResponse("File too large, max 10MB", { status: 400 });
+    return new NextResponse("File too large, max 50MB", { status: 400 });
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());

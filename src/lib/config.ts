@@ -1,4 +1,4 @@
-export const MAX_FILE_SIZE = 10 * 1024 * 1024;
+export const MAX_FILE_SIZE = 50 * 1024 * 1024;
 export const MAX_NOTE_LENGTH = 50_000;
 
 export const APP_CONFIG = {
