@@ -77,19 +77,55 @@ export function SpaceView({
     }
   }
 
+  async function registerBlobAsset(
+    blobUrl: string,
+    originalName: string,
+    mimeType: string,
+    size: number,
+  ): Promise<void> {
+    const res = await fetch(`/api/spaces/${slug}/assets/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        blobUrl,
+        originalName,
+        mimeType,
+        size,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `${originalName} 上传登记失败`);
+    }
+  }
+
   async function uploadOneFile(file: File, originalName?: string): Promise<void> {
+    const name = originalName || file.name;
+    let blobUploaded = false;
     try {
-      await upload(originalName || file.name, file, {
+      const blob = await upload(name, file, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         clientPayload: JSON.stringify({
           slug,
-          originalName: originalName || file.name,
+          originalName: name,
           mimeType: file.type || "application/octet-stream",
           size: file.size,
         }),
       });
-    } catch {
+      blobUploaded = true;
+
+      await registerBlobAsset(
+        blob.url,
+        name,
+        file.type || blob.contentType || "application/octet-stream",
+        file.size,
+      );
+    } catch (error) {
+      if (blobUploaded) {
+        throw error;
+      }
       await uploadViaFallbackApi(file, originalName);
     }
   }

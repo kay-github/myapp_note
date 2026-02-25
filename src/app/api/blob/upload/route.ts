@@ -5,7 +5,6 @@ import { MAX_FILE_SIZE } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { canWriteSpace } from "@/lib/space-permission";
 import { getClientIp } from "@/lib/request";
-import { writeAudit } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/ratelimit";
 
 const payloadSchema = z.object({
@@ -47,36 +46,6 @@ export async function POST(request: Request): Promise<NextResponse> {
           maximumSizeInBytes: MAX_FILE_SIZE,
           tokenPayload: JSON.stringify(parsed.data),
         };
-      },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        const parsed = payloadSchema.safeParse(JSON.parse(tokenPayload || "{}"));
-        if (!parsed.success) {
-          return;
-        }
-
-        const space = await prisma.space.findUnique({ where: { slug: parsed.data.slug } });
-        if (!space) {
-          return;
-        }
-
-        await prisma.asset.create({
-          data: {
-            spaceId: space.id,
-            name: parsed.data.originalName,
-            mimeType: parsed.data.mimeType || blob.contentType || "application/octet-stream",
-            size: parsed.data.size,
-            blobUrl: blob.url,
-            storage: "blob",
-          },
-        });
-
-        await writeAudit({
-          action: "asset_upload_blob",
-          actor: "space",
-          ip,
-          spaceId: space.id,
-          detail: parsed.data.originalName,
-        });
       },
     });
 
