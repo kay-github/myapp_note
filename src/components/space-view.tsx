@@ -116,6 +116,11 @@ export function SpaceView({
       });
       blobUploaded = true;
 
+      if (!blob || typeof blob.url !== "string" || blob.url.length === 0) {
+        await uploadViaFallbackApi(file, originalName);
+        return;
+      }
+
       await registerBlobAsset(
         blob.url,
         name,
@@ -124,8 +129,10 @@ export function SpaceView({
       );
     } catch (error) {
       if (blobUploaded) {
+        console.error("[uploadOneFile:register-failed]", error);
         throw error;
       }
+      console.warn("[uploadOneFile:blob-fallback]", error);
       await uploadViaFallbackApi(file, originalName);
     }
   }
