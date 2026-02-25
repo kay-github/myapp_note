@@ -8,6 +8,7 @@ type SpaceInfo = {
   id: string;
   title: string;
   slug: string;
+  isPublic: boolean;
   hasPassword: boolean;
   assetCount: number;
   updatedAt: string;
@@ -197,7 +198,14 @@ export function AdminPanel({ authed, spaces }: Props) {
       <div className="space-y-3">
         {spaces.map((space) => (
           <div className="panel p-4" key={space.id}>
-            <p className="text-lg font-semibold">{space.title}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-lg font-semibold">{space.title}</p>
+              {space.isPublic && (
+                <span className="rounded-full bg-[var(--brand-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--brand)]">
+                  公共空间
+                </span>
+              )}
+            </div>
             <p className="font-mono text-xs text-[var(--ink-1)]">/{space.slug}</p>
             <p className="mt-1 text-xs text-[var(--ink-1)]">
               附件 {space.assetCount} 个 · 最近更新 {new Date(space.updatedAt).toLocaleString("zh-CN")}
