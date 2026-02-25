@@ -186,6 +186,33 @@ export function SpaceView({
     }
   }
 
+  async function clearNote() {
+    if (!confirm("确认清空当前文本内容吗？")) {
+      return;
+    }
+
+    const previous = text;
+    setText("");
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/spaces/${slug}/note`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "" }),
+      });
+      if (!res.ok) {
+        throw new Error("清空失败，请重试");
+      }
+      notify("文本已清空", "success");
+      router.refresh();
+    } catch (error) {
+      setText(previous);
+      notify(error instanceof Error ? error.message : "清空失败", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function uploadFiles(fileList: FileList | null) {
     if (!fileList?.length) {
       return;
@@ -333,7 +360,14 @@ export function SpaceView({
               <h2 className="text-lg font-semibold">文本区</h2>
               <button
                 className="btn btn-ghost"
-                onClick={() => navigator.clipboard.writeText(text)}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(text);
+                    notify("复制成功", "success");
+                  } catch {
+                    notify("复制失败，请手动复制", "error");
+                  }
+                }}
                 type="button"
               >
                 复制全部文本
@@ -361,6 +395,9 @@ export function SpaceView({
                     multiple
                   />
                 </label>
+                <button className="btn btn-danger" disabled={busy} onClick={clearNote} type="button">
+                  清空文本
+                </button>
               </div>
             )}
             <p className="mt-2 text-xs text-[var(--ink-1)]">支持直接粘贴图片，会自动转为文件并展示预览。</p>
