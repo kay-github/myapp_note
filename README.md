@@ -23,6 +23,8 @@ cp .env.example .env
 
 2) 修改 `.env` 的 `DATABASE_URL`
 
+建议同时设置 `DATA_ENCRYPTION_KEY`（用于内容加密存储）
+
 3) 生成客户端并建表
 
 ```bash
@@ -50,3 +52,4 @@ bun run dev
 - 当前文件存数据库，后续若附件量变大建议切换对象存储（Supabase Storage / Vercel Blob）
 - 构建脚本会自动执行 `prisma db push`，确保生产库表结构存在
 - 若线上出现 `Application error`，先检查 Vercel 环境变量是否已配置：`DATABASE_URL`、`ADMIN_PASSWORD`、`SESSION_SECRET`
+- 私有空间文本与附件在数据库中以应用层加密存储，需保持 `DATA_ENCRYPTION_KEY` 稳定且安全

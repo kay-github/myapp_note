@@ -4,6 +4,7 @@ import { canWriteSpace } from "@/lib/space-permission";
 import { prisma } from "@/lib/prisma";
 import { getClientIp } from "@/lib/request";
 import { writeAudit } from "@/lib/audit";
+import { encryptBytes } from "@/lib/crypto";
 
 type Context = { params: Promise<{ slug: string }> };
 
@@ -30,13 +31,14 @@ export async function POST(req: Request, { params }: Context) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
+  const encrypted = encryptBytes(bytes);
   await prisma.asset.create({
     data: {
       spaceId: space.id,
       name: file.name,
       mimeType: file.type || "application/octet-stream",
       size: file.size,
-      data: Buffer.from(bytes),
+      data: encrypted,
     },
   });
 

@@ -5,6 +5,7 @@ import { APP_CONFIG } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { SpaceView } from "@/components/space-view";
 import { canReadSpace, canWriteSpace } from "@/lib/space-permission";
+import { decryptText } from "@/lib/crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export default async function SpacePage({ params }: Props) {
       <SpaceView
         slug={space.slug}
         title={space.title}
-        note={canRead ? space.note?.content || "" : ""}
+        note={canRead ? decryptText(space.note?.content || "") : ""}
         canRead={canRead}
         canWrite={canWrite}
         hasPassword={Boolean(space.passwordHash)}

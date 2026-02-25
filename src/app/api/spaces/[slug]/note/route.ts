@@ -5,6 +5,7 @@ import { canWriteSpace } from "@/lib/space-permission";
 import { prisma } from "@/lib/prisma";
 import { getClientIp } from "@/lib/request";
 import { writeAudit } from "@/lib/audit";
+import { encryptText } from "@/lib/crypto";
 
 const bodySchema = z.object({
   content: z.string().max(MAX_NOTE_LENGTH),
@@ -32,10 +33,10 @@ export async function PUT(req: Request, { params }: Context) {
     where: { spaceId: space.id },
     create: {
       spaceId: space.id,
-      content: parsed.data.content,
+      content: encryptText(parsed.data.content),
     },
     update: {
-      content: parsed.data.content,
+      content: encryptText(parsed.data.content),
     },
   });
 

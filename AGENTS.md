@@ -64,8 +64,8 @@
 ## 6) Data Model
 
 - `Space`: `title`, `slug`, `passwordHash`, timestamps
-- `Note`: one-to-one space plain text content
-- `Asset`: binary data + `mimeType`, `name`, `size`
+- `Note`: one-to-one space text content (stored encrypted at application layer)
+- `Asset`: binary data + `mimeType`, `name`, `size` (binary payload stored encrypted at application layer)
 - `AuditLog`: action, actor, ip, detail, timestamps
 
 Schema file: `prisma/schema.prisma`
@@ -77,6 +77,7 @@ Required:
 - `DATABASE_URL`
 - `ADMIN_PASSWORD`
 - `SESSION_SECRET`
+- `DATA_ENCRYPTION_KEY`
 - `DEFAULT_SPACE_SLUG`
 - `DEFAULT_SPACE_TITLE`
 
@@ -110,4 +111,5 @@ Checks:
 - Keep permission checks centralized in `src/lib/space-permission.ts`.
 - Validate API input with `zod`.
 - Persist security-sensitive operations to `AuditLog`.
+- Keep note/asset storage encrypted using helpers in `src/lib/crypto.ts`.
 - Do not expose or commit secrets/tokens.

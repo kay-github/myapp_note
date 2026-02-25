@@ -7,6 +7,7 @@ import { hashPassword } from "@/lib/hash";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request";
+import { encryptText } from "@/lib/crypto";
 
 const slugPattern = /^[a-zA-Z0-9_-]{3,30}$/;
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
         title: payload.title,
         slug: payload.slug,
         passwordHash,
-        note: { create: { content: "" } },
+        note: { create: { content: encryptText("") } },
       },
     });
 

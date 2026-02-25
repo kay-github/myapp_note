@@ -3,6 +3,7 @@ import { canReadSpace, canWriteSpace } from "@/lib/space-permission";
 import { prisma } from "@/lib/prisma";
 import { getClientIp } from "@/lib/request";
 import { writeAudit } from "@/lib/audit";
+import { decryptBytes } from "@/lib/crypto";
 
 type Context = { params: Promise<{ slug: string; assetId: string }> };
 
@@ -26,10 +27,11 @@ export async function GET(_: Request, { params }: Context) {
     return new NextResponse("Asset not found", { status: 404 });
   }
 
-  return new NextResponse(new Uint8Array(asset.data), {
+  const payload = decryptBytes(asset.data);
+  return new NextResponse(new Uint8Array(payload), {
     headers: {
       "Content-Type": asset.mimeType,
-      "Content-Length": String(asset.size),
+      "Content-Length": String(payload.length),
       "Content-Disposition": `inline; filename="${encodeURIComponent(asset.name)}"`,
       "Cache-Control": "public, max-age=31536000, immutable",
     },
