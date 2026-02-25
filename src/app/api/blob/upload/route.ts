@@ -42,6 +42,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         }
 
         return {
+          access: "private",
           addRandomSuffix: true,
           maximumSizeInBytes: MAX_FILE_SIZE,
           tokenPayload: JSON.stringify(parsed.data),

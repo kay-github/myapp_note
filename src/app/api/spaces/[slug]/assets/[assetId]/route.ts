@@ -29,7 +29,31 @@ export async function GET(_: Request, { params }: Context) {
   }
 
   if (asset.storage === "blob" && asset.blobUrl) {
-    return NextResponse.redirect(asset.blobUrl);
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!blobToken) {
+      return new NextResponse("Blob token missing", { status: 500 });
+    }
+
+    const blobRes = await fetch(asset.blobUrl, {
+      headers: {
+        Authorization: `Bearer ${blobToken}`,
+      },
+    });
+
+    if (!blobRes.ok) {
+      return new NextResponse("Failed to read blob", { status: 502 });
+    }
+
+    const contentType = blobRes.headers.get("content-type") || asset.mimeType;
+    const contentLength = blobRes.headers.get("content-length") || String(asset.size);
+    return new NextResponse(blobRes.body, {
+      headers: {
+        "Content-Type": contentType,
+        "Content-Length": contentLength,
+        "Content-Disposition": `inline; filename="${encodeURIComponent(asset.name)}"`,
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+    });
   }
 
   if (!asset.data) {

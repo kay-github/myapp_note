@@ -105,7 +105,7 @@ export function SpaceView({
     let blobUploaded = false;
     try {
       const blob = await upload(name, file, {
-        access: "public",
+        access: "private",
         handleUploadUrl: "/api/blob/upload",
         clientPayload: JSON.stringify({
           slug,
