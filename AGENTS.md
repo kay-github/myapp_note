@@ -33,6 +33,7 @@
 - `writeAudit` runs after the response via `next/server` `after()`; audit writes must never block user-facing latency.
 - Client: note save/clear keep local state without full `router.refresh()`; unlock/delete refresh inside `useTransition` so buttons stay in loading state until fresh server content renders; multi-file uploads run in parallel.
 - Buttons use `white-space: nowrap` (`.btn` in `globals.css`) to avoid CJK label line-breaks in flex rows.
+- Blob asset downloads: after permission check, `GET /api/spaces/[slug]/assets/[assetId]` issues a short-lived signed CDN URL (`src/lib/blob-sign.ts`, 10-min TTL, in-process token cache) and 302-redirects — bytes never proxy through the serverless function. Falls back to the legacy authenticated proxy when presigning fails. Requires `@vercel/blob` >= 2.4 signed-URL APIs (`issueSignedToken`/`presignUrl`).
 
 ## 3) Stack and Runtime
 
