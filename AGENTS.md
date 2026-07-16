@@ -25,6 +25,15 @@
   - Files
 - User feedback uses top-center auto-dismiss toast notifications for save/upload/auth/update outcomes.
 
+## 2.1) Performance Conventions
+
+- Space page queries asset metadata only (`select` without `data`); never load encrypted binary payloads in list views.
+- Home page counts assets via `_count` aggregation instead of fetching rows.
+- `ensureDefaultSpace` is called lazily — only when the default space is actually missing, not on every request.
+- `writeAudit` runs after the response via `next/server` `after()`; audit writes must never block user-facing latency.
+- Client: note save/clear keep local state without full `router.refresh()`; unlock/delete refresh inside `useTransition` so buttons stay in loading state until fresh server content renders; multi-file uploads run in parallel.
+- Buttons use `white-space: nowrap` (`.btn` in `globals.css`) to avoid CJK label line-breaks in flex rows.
+
 ## 3) Stack and Runtime
 
 - Next.js 16 + React 19

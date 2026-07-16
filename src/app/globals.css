@@ -43,6 +43,7 @@ body {
   font-size: 0.92rem;
   transition: all 150ms ease;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .btn:hover {

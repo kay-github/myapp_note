@@ -6,15 +6,22 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  await ensureDefaultSpace();
+  const querySpaces = () =>
+    prisma.space.findMany({
+      orderBy: { updatedAt: "desc" },
+      include: {
+        note: { select: { updatedAt: true } },
+        _count: { select: { assets: true } },
+      },
+    });
 
-  const spaces = await prisma.space.findMany({
-    orderBy: { updatedAt: "desc" },
-    include: {
-      note: { select: { updatedAt: true } },
-      assets: { select: { id: true } },
-    },
-  });
+  let spaces = await querySpaces();
+
+  // 仅当默认公共空间缺失时才补建，避免每次首页访问都多一次数据库往返
+  if (!spaces.some((space) => space.slug === APP_CONFIG.defaultSpaceSlug)) {
+    await ensureDefaultSpace();
+    spaces = await querySpaces();
+  }
 
   const orderedSpaces = [...spaces].sort((a, b) => {
     const aPublic = a.slug === APP_CONFIG.defaultSpaceSlug;
@@ -49,7 +56,7 @@ export default async function Home() {
               最近编辑：
               {new Date(space.note?.updatedAt || space.updatedAt).toLocaleString("zh-CN")}
             </p>
-            <p className="mt-1 text-sm text-[var(--ink-1)]">附件数量：{space.assets.length}</p>
+            <p className="mt-1 text-sm text-[var(--ink-1)]">附件数量：{space._count.assets}</p>
             <p className="mt-1 text-sm text-[var(--ink-1)]">
               {space.slug === APP_CONFIG.defaultSpaceSlug ? "公共空间：免密可读，编辑需密码" : "私有空间：输入密码后访问"}
             </p>

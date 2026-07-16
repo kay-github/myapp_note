@@ -15,23 +15,34 @@ type Props = {
 
 export default async function SpacePage({ params }: Props) {
   const { slug } = await params;
-  await ensureDefaultSpace();
 
-  const space = await prisma.space.findUnique({
-    where: { slug },
-    include: {
-      note: true,
-      assets: { orderBy: { createdAt: "desc" } },
-    },
-  });
+  const querySpace = () =>
+    prisma.space.findUnique({
+      where: { slug },
+      include: {
+        note: true,
+        assets: {
+          orderBy: { createdAt: "desc" },
+          // 只取元数据，避免把加密后的文件二进制（最大 50MB/个）一并读出拖慢页面
+          select: { id: true, name: true, mimeType: true, size: true, createdAt: true },
+        },
+      },
+    });
+
+  let space = await querySpace();
+
+  // 仅当访问的是默认公共空间且尚未创建时才补建，避免每次访问都多一次数据库往返
+  if (!space && slug === APP_CONFIG.defaultSpaceSlug) {
+    await ensureDefaultSpace();
+    space = await querySpace();
+  }
 
   if (!space) {
     notFound();
   }
 
   const isPublicSpace = space.slug === APP_CONFIG.defaultSpaceSlug;
-  const canRead = await canReadSpace(space);
-  const canWrite = await canWriteSpace(space);
+  const [canRead, canWrite] = await Promise.all([canReadSpace(space), canWriteSpace(space)]);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">

@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { TopToast, ToastTone } from "@/components/top-toast";
@@ -49,6 +49,8 @@ export function SpaceView({
   const [password, setPassword] = useState("");
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [showEditAuth, setShowEditAuth] = useState(false);
+  const [isRefreshing, startRefresh] = useTransition();
+  const pending = busy || isRefreshing;
 
   useEffect(() => {
     setText(note);
@@ -138,9 +140,10 @@ export function SpaceView({
   }
 
   async function refreshAfterBlobSync(): Promise<void> {
-    router.refresh();
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    router.refresh();
+    // 附件登记接口返回时数据已写入数据库，单次刷新即可拿到最新列表
+    startRefresh(() => {
+      router.refresh();
+    });
   }
 
   async function unlockSpace(e: FormEvent) {
@@ -158,7 +161,10 @@ export function SpaceView({
       setPassword("");
       setShowEditAuth(false);
       notify(canRead ? "编辑权限已开启" : "验证成功，正在进入空间", "success");
-      router.refresh();
+      // transition 会让按钮保持加载态，直到服务端渲染出解锁后的内容
+      startRefresh(() => {
+        router.refresh();
+      });
     } catch (error) {
       notify(error instanceof Error ? error.message : "验证失败", "error");
     } finally {
@@ -178,7 +184,7 @@ export function SpaceView({
         throw new Error("保存失败，请确认密码权限");
       }
       notify("文本已保存", "success");
-      router.refresh();
+      // 文本已在本地 state，无需整页刷新
     } catch (error) {
       notify(error instanceof Error ? error.message : "保存失败", "error");
     } finally {
@@ -204,7 +210,6 @@ export function SpaceView({
         throw new Error("清空失败，请重试");
       }
       notify("文本已清空", "success");
-      router.refresh();
     } catch (error) {
       setText(previous);
       notify(error instanceof Error ? error.message : "清空失败", "error");
@@ -219,9 +224,8 @@ export function SpaceView({
     }
     setBusy(true);
     try {
-      for (const file of Array.from(fileList)) {
-        await uploadOneFile(file);
-      }
+      // 并行上传多个文件，缩短整体等待时间
+      await Promise.all(Array.from(fileList).map((file) => uploadOneFile(file)));
       notify("上传完成，正在同步列表", "success");
       await refreshAfterBlobSync();
     } catch (error) {
@@ -273,7 +277,9 @@ export function SpaceView({
         throw new Error("删除失败");
       }
       notify("资源已删除", "success");
-      router.refresh();
+      startRefresh(() => {
+        router.refresh();
+      });
     } catch (error) {
       notify(error instanceof Error ? error.message : "删除失败", "error");
     } finally {
@@ -309,8 +315,8 @@ export function SpaceView({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <button className="btn btn-primary" disabled={busy} type="submit">
-              进入空间
+            <button className="btn btn-primary" disabled={pending} type="submit">
+              {pending ? "正在进入…" : "进入空间"}
             </button>
           </form>
         ) : (
@@ -343,8 +349,8 @@ export function SpaceView({
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                       />
-                      <button className="btn btn-primary" disabled={busy} type="submit">
-                        验证并编辑
+                      <button className="btn btn-primary" disabled={pending} type="submit">
+                        {pending ? "验证中…" : "验证并编辑"}
                       </button>
                     </form>
                   )}
