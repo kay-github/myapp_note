@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { del } from "@vercel/blob";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { APP_CONFIG } from "@/lib/config";
@@ -133,7 +134,14 @@ export async function DELETE(req: Request) {
 
   const target = await prisma.space.findUnique({
     where: { id: parsed.data.spaceId },
-    select: { slug: true, id: true },
+    select: {
+      slug: true,
+      id: true,
+      assets: {
+        where: { storage: "blob", blobUrl: { not: null } },
+        select: { blobUrl: true },
+      },
+    },
   });
 
   if (!target) {
@@ -144,12 +152,25 @@ export async function DELETE(req: Request) {
     return new NextResponse("默认空间不可删除", { status: 400 });
   }
 
+  // 先删 Blob 文件再删数据库，否则级联删除 Asset 行后文件成为孤儿，永久占用存储额度
+  const blobUrls = target.assets
+    .map((asset) => asset.blobUrl)
+    .filter((url): url is string => Boolean(url));
+  if (blobUrls.length > 0) {
+    try {
+      await del(blobUrls);
+    } catch (error) {
+      console.error("[admin-delete-space:blob]", error);
+      return new NextResponse("删除空间附件失败，请重试", { status: 502 });
+    }
+  }
+
   await prisma.space.delete({ where: { id: target.id } });
+  // 空间行已删除，审计不能再引用 spaceId（外键会失败），slug 记录在 detail 中
   await writeAudit({
     action: "admin_delete_space",
     actor: "admin",
     ip,
-    spaceId: target.id,
     detail: target.slug,
   });
 

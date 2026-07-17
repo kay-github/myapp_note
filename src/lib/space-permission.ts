@@ -11,11 +11,7 @@ export async function canReadSpace(space: Space): Promise<boolean> {
     return true;
   }
 
-  if (!space.passwordHash) {
-    return false;
-  }
-
-  return canWriteWithSpaceCookie(space.slug);
+  return canWriteWithSpaceCookie(space.slug, space.passwordHash);
 }
 
 export async function canWriteSpace(space: Space): Promise<boolean> {
@@ -23,9 +19,5 @@ export async function canWriteSpace(space: Space): Promise<boolean> {
     return true;
   }
 
-  if (!space.passwordHash) {
-    return false;
-  }
-
-  return canWriteWithSpaceCookie(space.slug);
+  return canWriteWithSpaceCookie(space.slug, space.passwordHash);
 }

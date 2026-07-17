@@ -9,6 +9,9 @@ import { encryptText } from "@/lib/crypto";
 
 const bodySchema = z.object({
   content: z.string().max(MAX_NOTE_LENGTH),
+  // 客户端加载笔记时的 updatedAt，用于检测其他设备的并发修改；不传则跳过检测（兼容旧客户端）
+  baseUpdatedAt: z.string().nullable().optional(),
+  force: z.boolean().optional(),
 });
 
 type Context = { params: Promise<{ slug: string }> };
@@ -29,7 +32,20 @@ export async function PUT(req: Request, { params }: Context) {
     return new NextResponse("Write permission required", { status: 401 });
   }
 
-  await prisma.note.upsert({
+  if (!parsed.data.force && parsed.data.baseUpdatedAt !== undefined) {
+    const existing = await prisma.note.findUnique({
+      where: { spaceId: space.id },
+      select: { updatedAt: true },
+    });
+    if (existing) {
+      const base = parsed.data.baseUpdatedAt ? Date.parse(parsed.data.baseUpdatedAt) : Number.NaN;
+      if (Number.isNaN(base) || existing.updatedAt.getTime() !== base) {
+        return new NextResponse("Note was modified on another device", { status: 409 });
+      }
+    }
+  }
+
+  const saved = await prisma.note.upsert({
     where: { spaceId: space.id },
     create: {
       spaceId: space.id,
@@ -38,6 +54,7 @@ export async function PUT(req: Request, { params }: Context) {
     update: {
       content: encryptText(parsed.data.content),
     },
+    select: { updatedAt: true },
   });
 
   await writeAudit({
@@ -47,5 +64,5 @@ export async function PUT(req: Request, { params }: Context) {
     spaceId: space.id,
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, updatedAt: saved.updatedAt.toISOString() });
 }

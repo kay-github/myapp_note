@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -40,9 +40,14 @@ export function spaceCookieName(slug: string): string {
   return `qs_space_${slug}`;
 }
 
-export async function setSpaceSession(slug: string): Promise<void> {
+// 会话 cookie 绑定当前密码哈希的指纹：管理员改密后所有旧会话立即失效
+function passwordFingerprint(passwordHash: string): string {
+  return createHash("sha256").update(passwordHash).digest("hex").slice(0, 16);
+}
+
+export async function setSpaceSession(slug: string, passwordHash: string): Promise<void> {
   const store = await cookies();
-  const payload = `${slug}:${expiresAt()}`;
+  const payload = `${slug}:${expiresAt()}:${passwordFingerprint(passwordHash)}`;
   store.set(spaceCookieName(slug), buildToken(payload), {
     httpOnly: true,
     sameSite: "lax",
@@ -57,7 +62,11 @@ export async function clearSpaceSession(slug: string): Promise<void> {
   store.delete(spaceCookieName(slug));
 }
 
-export async function canWriteWithSpaceCookie(slug: string): Promise<boolean> {
+export async function canWriteWithSpaceCookie(slug: string, passwordHash: string | null): Promise<boolean> {
+  if (!passwordHash) {
+    return false;
+  }
+
   const store = await cookies();
   const token = store.get(spaceCookieName(slug))?.value;
   if (!token) {
@@ -69,9 +78,14 @@ export async function canWriteWithSpaceCookie(slug: string): Promise<boolean> {
     return false;
   }
 
-  const [tokenSlug, expireText] = payload.split(":");
+  const [tokenSlug, expireText, fingerprint] = payload.split(":");
   const expire = Number(expireText);
   if (tokenSlug !== slug || Number.isNaN(expire) || expire < Date.now()) {
+    return false;
+  }
+
+  // 指纹不匹配说明密码已被修改（或旧格式 cookie），要求重新验证
+  if (fingerprint !== passwordFingerprint(passwordHash)) {
     return false;
   }
 

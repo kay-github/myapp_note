@@ -6,6 +6,9 @@
 - 空间内容默认可读可复制
 - 文本写入、文件上传、粘贴图片需空间密码
 - 超管密码可创建/修改/删除空间，并免密进入任意空间
+- 空间内容跨设备自动同步（25 秒轮询 + 页面聚焦时检测，有变化才刷新）
+- 两台设备同时编辑文本时保存前有冲突确认，本地未保存内容不会被静默覆盖
+- 上传附件显示总进度条；空间页可展示当前链接二维码，手机扫码直达
 
 ## 技术栈
 
@@ -60,5 +63,8 @@ bun run dev
 - 推荐使用免费的外部 PostgreSQL（如 Supabase/Neon）
 - 生产建议启用 Vercel Blob（需要 `BLOB_READ_WRITE_TOKEN`）
 - 构建脚本会自动执行 `prisma db push`，确保生产库表结构存在
+- **生产环境必须配置 `ADMIN_PASSWORD` 与 `SESSION_SECRET`**：缺失时构建/启动会直接报错（不再回退到内置默认值），部署前请确认 Vercel 环境变量已设置
+- 修改空间密码后，该空间所有旧会话自动失效，需用新密码重新验证
+- 管理端删除空间时会同步删除其在 Vercel Blob 中的全部附件文件
 - 若线上出现 `Application error`，先检查 Vercel 环境变量是否已配置：`DATABASE_URL`、`ADMIN_PASSWORD`、`SESSION_SECRET`
 - 文本与数据库落地的附件采用应用层加密存储，需保持 `DATA_ENCRYPTION_KEY` 稳定且安全

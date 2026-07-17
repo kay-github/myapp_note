@@ -56,6 +56,7 @@ export default async function SpacePage({ params }: Props) {
         slug={space.slug}
         title={space.title}
         note={canRead ? decryptText(space.note?.content || "") : ""}
+        noteUpdatedAt={canRead ? (space.note?.updatedAt.toISOString() ?? null) : null}
         canRead={canRead}
         canWrite={canWrite}
         hasPassword={Boolean(space.passwordHash)}

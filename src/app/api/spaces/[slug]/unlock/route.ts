@@ -46,7 +46,7 @@ export async function POST(req: Request, { params }: Context) {
     return new NextResponse("Wrong password", { status: 401 });
   }
 
-  await setSpaceSession(slug);
+  await setSpaceSession(slug, space.passwordHash);
   await writeAudit({
     action: "space_unlock_ok",
     actor: "space",

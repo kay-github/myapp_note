@@ -34,6 +34,17 @@
 - Client: note save/clear keep local state without full `router.refresh()`; unlock/delete refresh inside `useTransition` so buttons stay in loading state until fresh server content renders; multi-file uploads run in parallel.
 - Buttons use `white-space: nowrap` (`.btn` in `globals.css`) to avoid CJK label line-breaks in flex rows.
 - Blob asset downloads: after permission check, `GET /api/spaces/[slug]/assets/[assetId]` issues a short-lived signed CDN URL (`src/lib/blob-sign.ts`, 10-min TTL, in-process token cache) and 302-redirects — bytes never proxy through the serverless function. Falls back to the legacy authenticated proxy when presigning fails. Requires `@vercel/blob` >= 2.4 signed-URL APIs (`issueSignedToken`/`presignUrl`).
+- Cross-device sync: `GET /api/spaces/[slug]/state` is a lightweight version endpoint (note updatedAt + asset count + latest asset time). The client polls it every 25s and on window focus/visibility, and only calls `router.refresh()` when something changed.
+- Note conflict safety: `PUT /note` accepts `baseUpdatedAt` + `force`; mismatched base returns 409 and the client asks before overwriting. Local unsaved edits are never clobbered by a refresh (dirty check in `space-view.tsx` sync effect).
+- Uploads report aggregate progress via `onUploadProgress`; a session counter (`uploadSessionRef`) prevents stale progress updates after a failed batch.
+- `loading.tsx` skeletons exist for `/` and `/[slug]`.
+- QR code (`src/components/space-qr.tsx`) uses zero-dependency `qrcode-generator`, dynamically imported on first open.
+
+## 2.2) Security Conventions
+
+- Space session cookies embed a fingerprint of the current `passwordHash` — changing a space password invalidates all existing sessions for it (see `setSpaceSession`/`canWriteWithSpaceCookie` in `src/lib/auth.ts`).
+- `ADMIN_PASSWORD` and `SESSION_SECRET` are required in production: `src/lib/config.ts` throws at build/boot when missing (dev keeps local fallbacks). Never reintroduce hardcoded production secrets.
+- Admin space deletion deletes all Vercel Blob files first (`del(blobUrls)`), then the DB rows; the audit entry for a deleted space must not reference `spaceId` (FK would fail).
 
 ## 3) Stack and Runtime
 
