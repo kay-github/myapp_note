@@ -4,6 +4,7 @@ import { APP_CONFIG } from "@/lib/config";
 import { setAdminSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { getClientIp } from "@/lib/request";
+import { secureTextEqual } from "@/lib/hash";
 
 const bodySchema = z.object({
   password: z.string().min(1),
@@ -11,7 +12,7 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   const ip = await getClientIp();
-  if (!checkRateLimit(`admin-unlock:${ip}`, 12, 5 * 60 * 1000)) {
+  if (!(await checkRateLimit(`admin-unlock:${ip}`, 12, 5 * 60 * 1000))) {
     return new NextResponse("Too many requests", { status: 429 });
   }
 
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
     return new NextResponse("Invalid payload", { status: 400 });
   }
 
-  if (parsed.data.password !== APP_CONFIG.adminPassword) {
+  if (!secureTextEqual(parsed.data.password, APP_CONFIG.adminPassword)) {
     return new NextResponse("Wrong admin password", { status: 401 });
   }
 

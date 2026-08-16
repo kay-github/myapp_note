@@ -17,7 +17,7 @@ export async function POST(req: Request, { params }: Context) {
   const { slug } = await params;
   const ip = await getClientIp();
 
-  if (!checkRateLimit(`space-unlock:${ip}:${slug}`, 16, 5 * 60 * 1000)) {
+  if (!(await checkRateLimit(`space-unlock:${ip}:${slug}`, 16, 5 * 60 * 1000))) {
     return new NextResponse("Too many requests", { status: 429 });
   }
 

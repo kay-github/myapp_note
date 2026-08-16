@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request";
 import { encryptText } from "@/lib/crypto";
+import { parseTrustedBlobUrl } from "@/lib/blob-security";
 
 const slugPattern = /^[a-zA-Z0-9_-]{3,30}$/;
 
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
       detail: payload.slug,
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, spaceId: space.id });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return new NextResponse("路径已被占用", { status: 409 });
@@ -155,6 +156,8 @@ export async function DELETE(req: Request) {
   // 先删 Blob 文件再删数据库，否则级联删除 Asset 行后文件成为孤儿，永久占用存储额度
   const blobUrls = target.assets
     .map((asset) => asset.blobUrl)
+    .filter((url): url is string => Boolean(url))
+    .map((url) => parseTrustedBlobUrl(url)?.toString())
     .filter((url): url is string => Boolean(url));
   if (blobUrls.length > 0) {
     try {

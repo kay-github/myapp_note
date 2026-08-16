@@ -1,26 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { canWriteSpace } from "@/lib/space-permission";
-import { getClientIp } from "@/lib/request";
-import { writeAudit } from "@/lib/audit";
-import { MAX_FILE_SIZE } from "@/lib/config";
+import { canReadSpace } from "@/lib/space-permission";
+import { blobAssetId, parseTrustedBlobUrl } from "@/lib/blob-security";
 
-const bodySchema = z.object({
-  blobUrl: z.string().url(),
-  originalName: z.string().min(1).max(255),
-  mimeType: z.string().min(1).max(120),
-  size: z.number().int().positive().max(MAX_FILE_SIZE),
-});
+const blobUrlSchema = z.string().url().refine((value) => Boolean(parseTrustedBlobUrl(value)));
 
 type Context = { params: Promise<{ slug: string }> };
 
-export async function POST(req: Request, { params }: Context) {
+export async function GET(req: Request, { params }: Context) {
   const { slug } = await params;
-
-  const parsed = bodySchema.safeParse(await req.json());
+  const parsed = blobUrlSchema.safeParse(new URL(req.url).searchParams.get("blobUrl"));
   if (!parsed.success) {
-    return new NextResponse("Invalid payload", { status: 400 });
+    return new NextResponse("Invalid Blob URL", { status: 400 });
   }
 
   const space = await prisma.space.findUnique({ where: { slug } });
@@ -28,28 +20,21 @@ export async function POST(req: Request, { params }: Context) {
     return new NextResponse("Space not found", { status: 404 });
   }
 
-  if (!(await canWriteSpace(space))) {
-    return new NextResponse("Write permission required", { status: 401 });
+  if (!(await canReadSpace(space))) {
+    return new NextResponse("Read permission required", { status: 401 });
   }
 
-  await prisma.asset.create({
-    data: {
-      spaceId: space.id,
-      name: parsed.data.originalName,
-      mimeType: parsed.data.mimeType,
-      size: parsed.data.size,
-      blobUrl: parsed.data.blobUrl,
-      storage: "blob",
-    },
+  const asset = await prisma.asset.findFirst({
+    where: { id: blobAssetId(parsed.data), spaceId: space.id, blobUrl: parsed.data },
+    select: { id: true },
   });
 
-  await writeAudit({
-    action: "asset_register_blob",
-    actor: "space",
-    ip: await getClientIp(),
-    spaceId: space.id,
-    detail: parsed.data.originalName,
-  });
+  return NextResponse.json(
+    { registered: Boolean(asset) },
+    { headers: { "Cache-Control": "no-store" } },
+  );
+}
 
-  return NextResponse.json({ ok: true });
+export async function POST() {
+  return new NextResponse("Client-side Blob registration is disabled", { status: 410 });
 }

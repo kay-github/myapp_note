@@ -47,6 +47,8 @@ model Asset {
 
   spaceId String
   space   Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, createdAt])
 }
 
 model AuditLog {
@@ -59,4 +61,16 @@ model AuditLog {
 
   spaceId String?
   space   Space? @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([spaceId, createdAt])
+}
+
+model RateLimitBucket {
+  key       String   @id @db.VarChar(64)
+  count     Int
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
 }

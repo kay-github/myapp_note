@@ -7,134 +7,182 @@
 - Goal: Multi-space temporary notebook for cross-device sharing without account login.
 - Current product headline: `免登录临时笔记本`
 
-## 2) Core Product Rules (Latest)
+## 2) Core Product Rules
 
 - Home (`/`) shows all space titles and paths.
-- Admin entry is hidden from front pages (admin route still exists at `/admin`).
-- Access model:
-  - Public space (`DEFAULT_SPACE_SLUG`) can be opened directly for read/copy/download.
-  - Public space editing requires password verification (click `编辑` then verify).
-  - Non-public spaces require space password before content is visible.
-- All content inside accessible spaces can be read/copied/downloaded.
-- Upload max size: `50MB` per file.
-- File upload path prefers Vercel Blob direct upload to avoid serverless request-body limits.
-- Supported content blocks in space detail:
-  - Text
-  - Images
-  - Videos (preview + download)
-  - Files
-- User feedback uses top-center auto-dismiss toast notifications for save/upload/auth/update outcomes.
+- Admin entry is hidden from front pages; the route remains `/admin`.
+- The public space (`DEFAULT_SPACE_SLUG`) is readable without authentication, but editing requires its space password.
+- Private spaces require their space password before content is visible.
+- Accessible content can be read, copied, previewed, and downloaded.
+- Upload size is limited to `50MB` per file.
+- Supported blocks are text, images, videos, and general files.
+- Save, upload, authentication, synchronization, and failure outcomes use top-center toast feedback.
 
-## 2.1) Performance Conventions
+## 2.1) Client Reliability Conventions
 
-- Space page queries asset metadata only (`select` without `data`); never load encrypted binary payloads in list views.
-- Home page counts assets via `_count` aggregation instead of fetching rows.
-- `ensureDefaultSpace` is called lazily — only when the default space is actually missing, not on every request.
-- `writeAudit` runs after the response via `next/server` `after()`; audit writes must never block user-facing latency.
-- Client: note save/clear keep local state without full `router.refresh()`; unlock/delete refresh inside `useTransition` so buttons stay in loading state until fresh server content renders; multi-file uploads run in parallel.
-- Buttons use `white-space: nowrap` (`.btn` in `globals.css`) to avoid CJK label line-breaks in flex rows.
-- Blob asset downloads: after permission check, `GET /api/spaces/[slug]/assets/[assetId]` issues a short-lived signed CDN URL (`src/lib/blob-sign.ts`, 10-min TTL, in-process token cache) and 302-redirects — bytes never proxy through the serverless function. Falls back to the legacy authenticated proxy when presigning fails. Requires `@vercel/blob` >= 2.4 signed-URL APIs (`issueSignedToken`/`presignUrl`).
-- Cross-device sync: `GET /api/spaces/[slug]/state` is a lightweight version endpoint (note updatedAt + asset count + latest asset time). The client polls it every 25s and on window focus/visibility, and only calls `router.refresh()` when something changed.
-- Note conflict safety: `PUT /note` accepts `baseUpdatedAt` + `force`; mismatched base returns 409 and the client asks before overwriting. Local unsaved edits are never clobbered by a refresh (dirty check in `space-view.tsx` sync effect).
-- Uploads report aggregate progress via `onUploadProgress`; a session counter (`uploadSessionRef`) prevents stale progress updates after a failed batch.
+- Space state polling uses `GET /api/spaces/[slug]/state` every 25 seconds and on focus/visibility changes. Refresh only when the note version or asset summary changes.
+- A remote refresh must never replace dirty local text. `beforeunload` must remain active while the note differs from the last synchronized value.
+- Note saves always send `baseUpdatedAt`. The server performs an atomic compare-and-update; a mismatch returns 409 and requires explicit overwrite confirmation.
+- Clear-text follows the same conflict path as a normal save. Never bypass conflict detection merely because a destructive confirmation was already shown.
+- Session-expiry responses refresh permissions while preserving the local draft.
+- Multi-file uploads use batches of at most three concurrent files and `Promise.allSettled`, so all results are reconciled before the UI leaves its busy state.
+- Reset the file input after each selection so the same failed file can be selected again.
+- Blob uploads wait briefly for server-side registration and distinguish failed, registered, and still-pending files.
+- Save/clear update local state without a full refresh. Unlock and delete use `useTransition` until the refreshed server content renders.
+- Action rows must wrap on narrow screens; `.btn` labels remain on one line.
 - `loading.tsx` skeletons exist for `/` and `/[slug]`.
-- QR code (`src/components/space-qr.tsx`) uses zero-dependency `qrcode-generator`, dynamically imported on first open.
+- `SpaceQr` dynamically imports `qrcode-generator` on first open.
 
-## 2.2) Security Conventions
+## 2.2) Server Reliability And Security Conventions
 
-- Space session cookies embed a fingerprint of the current `passwordHash` — changing a space password invalidates all existing sessions for it (see `setSpaceSession`/`canWriteWithSpaceCookie` in `src/lib/auth.ts`).
-- `ADMIN_PASSWORD` and `SESSION_SECRET` are required in production: `src/lib/config.ts` throws at build/boot when missing (dev keeps local fallbacks). Never reintroduce hardcoded production secrets.
-- Admin space deletion deletes all Vercel Blob files first (`del(blobUrls)`), then the DB rows; the audit entry for a deleted space must not reference `spaceId` (FK would fail).
+- Keep permission checks centralized in `src/lib/space-permission.ts`.
+- Space cookies are signed and contain a fingerprint of the current password hash. Changing a space password invalidates its old sessions.
+- `ADMIN_PASSWORD`, `SESSION_SECRET`, and `DATA_ENCRYPTION_KEY` are mandatory in production. The data and session keys must differ. Never restore the formerly exposed sample admin password.
+- Compare direct secrets in constant time (`secureTextEqual`).
+- New encrypted data uses v2 (`enc:v2:` / `ENC2`) with `DATA_ENCRYPTION_KEY`. v1 reads may try both the data key and the current session key for upgrade compatibility.
+- Do not rotate `SESSION_SECRET` while any v1 record still depends on it. Do not rotate `DATA_ENCRYPTION_KEY` without an explicit decrypt/re-encrypt migration.
+- Once v2 data has been written, do not roll back to an application version that only understands v1. Prefer a forward fix or a v2-compatible rollback build.
+- Blob client uploads are registered only from `/api/blob/upload` `onUploadCompleted`. Client-side POST registration remains disabled.
+- Validate completed uploads with token payload, space identity, Blob `head` metadata, maximum size, and a deterministic asset ID. Registration must remain idempotent.
+- Only HTTPS URLs on a hostname ending in `.blob.vercel-storage.com`, with no credentials and a non-empty path, may be signed, read, registered, or deleted.
+- Asset responses are `private, no-store` and `nosniff`; active content is forced to download with a sandbox CSP.
+- Admin space deletion deletes trusted Blob objects before database rows. Its audit entry must not retain the deleted `spaceId` foreign key.
+- Rate limits use the PostgreSQL `RateLimitBucket` atomic upsert so all serverless instances share counters. Do not replace this with process memory.
+- Current limits: admin unlock 12/5 minutes/IP; space unlock 16/5 minutes/IP+slug; Blob token 60/5 minutes/IP; DB fallback upload 30/5 minutes/IP+slug.
+- `writeAudit` runs after the response through `next/server` `after()` and must not block user-visible latency.
 
-## 3) Stack and Runtime
+## 2.3) Performance Conventions
+
+- Space pages query asset metadata only; never load encrypted binary payloads in list views.
+- Home uses `_count` instead of fetching asset rows.
+- `ensureDefaultSpace` runs only when the default space is absent and must tolerate concurrent first requests.
+- Asset and audit time-order queries rely on committed indexes in Prisma migrations.
+- Blob downloads prefer a short-lived signed CDN URL and fall back to the authenticated Blob SDK proxy.
+- Signed redirects and proxied/DB assets must not use shared public caching.
+
+## 3) Stack And Runtime
 
 - Next.js 16 + React 19
-- Bun package manager
+- Bun 1.3.x
 - Prisma ORM + PostgreSQL
-- Vercel Blob for large asset objects
-- `bcryptjs` for password hash
-- `zod` for API payload validation
+- Vercel Blob private storage
+- `bcryptjs`, `zod`, and `qrcode-generator`
+
+Versions are pinned in `package.json`/`bun.lock`; update both together and run the complete check suite.
 
 ## 4) Architecture Overview
 
 - Server pages:
-  - `src/app/page.tsx` => home list
-  - `src/app/[slug]/page.tsx` => space detail
-  - `src/app/admin/page.tsx` => admin console
+  - `src/app/page.tsx`
+  - `src/app/[slug]/page.tsx`
+  - `src/app/admin/page.tsx`
 - Client components:
   - `src/components/space-view.tsx`
   - `src/components/admin-panel.tsx`
-- APIs:
-  - Admin:
-    - `POST /api/admin/unlock`
-    - `POST /api/admin/logout`
-    - `POST|PATCH|DELETE /api/admin/spaces`
-  - Space:
-    - `POST /api/spaces/[slug]/unlock`
-    - `POST /api/spaces/[slug]/lock`
-    - `PUT /api/spaces/[slug]/note`
-    - `POST /api/spaces/[slug]/assets`
-    - `GET|DELETE /api/spaces/[slug]/assets/[assetId]`
+- Admin APIs:
+  - `POST /api/admin/unlock`
+  - `POST /api/admin/logout`
+  - `POST|PATCH|DELETE /api/admin/spaces`
+- Space APIs:
+  - `POST /api/spaces/[slug]/unlock`
+  - `POST /api/spaces/[slug]/lock`
+  - `GET /api/spaces/[slug]/state`
+  - `PUT /api/spaces/[slug]/note`
+  - `POST /api/spaces/[slug]/assets` (database fallback)
+  - `GET /api/spaces/[slug]/assets/register` (registration status only)
+  - `GET|DELETE /api/spaces/[slug]/assets/[assetId]`
+- Blob API:
+  - `POST /api/blob/upload` (token issuance and completion callback)
 
 ## 5) Permission Model
 
-- Admin session => full read/write for all spaces.
-- Space session cookie (`qs_space_<slug>`) => read/write for that private space.
-- Public space read is always allowed.
-- Public/private write always requires either admin session or valid space password session.
-- Private asset GET is protected by read permission; public asset GET remains open through public-space read policy.
+- Admin session: full read/write for all spaces.
+- Valid space cookie: read/write for that space.
+- Public space: read-only without a cookie.
+- Every write requires an admin session or a valid current space session.
+- Private asset reads require space read permission; public assets follow public-space read policy.
 
-## 6) Data Model
+## 6) Data And Migrations
 
-- `Space`: `title`, `slug`, `passwordHash`, timestamps
-- `Note`: one-to-one space text content (stored encrypted at application layer)
-- `Asset`: metadata + storage marker (`blob` or `db`) and optional `blobUrl`; DB payload remains encrypted when used.
-- `AuditLog`: action, actor, ip, detail, timestamps
+- `Space`: title, slug, password hash, timestamps.
+- `Note`: one encrypted text value per space.
+- `Asset`: metadata, `blob`/`db` storage marker, optional trusted Blob URL, optional encrypted DB payload.
+- `AuditLog`: action, actor, IP, detail, timestamps.
+- `RateLimitBucket`: shared fixed-window counters.
 
-Schema file: `prisma/schema.prisma`
+Schema: `prisma/schema.prisma`. Migration history: `prisma/migrations/`.
+
+- Production and staging use `prisma migrate deploy` only.
+- Never run `prisma db push` or `prisma migrate dev` against production.
+- `prisma:push` exists only for disposable local databases.
+- Commit every schema change with its migration SQL.
+- Existing pre-migration databases must be verified and baselined with `20260224000000_baseline` before applying later migrations. Never mark an unapplied migration as applied.
 
 ## 7) Environment Variables
 
-Required:
+Required in production:
 
-- `DATABASE_URL`
+- `DATABASE_URL` (or one supported Postgres fallback variable)
 - `ADMIN_PASSWORD`
 - `SESSION_SECRET`
 - `DATA_ENCRYPTION_KEY`
-- `BLOB_READ_WRITE_TOKEN` (required for Vercel Blob direct upload in production)
+- `BLOB_READ_WRITE_TOKEN`
 - `DEFAULT_SPACE_SLUG`
 - `DEFAULT_SPACE_TITLE`
 
-Vercel fallback support is implemented for injected Postgres variables:
+Supported database fallbacks:
 
 - `POSTGRES_PRISMA_URL`
 - `POSTGRES_URL`
 - `POSTGRES_PRISMA_POSTGRES_URL`
 - `POSTGRES_PRISMA_PRISMA_DATABASE_URL`
 
-## 8) Local Dev Runbook
+Optional:
 
-1. `bun install`
-2. `bun run prisma:generate`
-3. `bun run prisma:push`
-4. `bun run dev`
+- `VERCEL_BLOB_CALLBACK_URL`: required off Vercel when direct Blob upload completion must call a public HTTPS origin. Supply the origin only; the SDK appends the request path.
+- `ALLOW_PRODUCTION_MIGRATIONS=1`: deployment-job consent flag only. Never persist it in preview or ordinary runtime environments.
 
-Checks:
+## 8) Local Runbook
 
-- `bun run lint`
-- `bunx tsc --noEmit`
+```bash
+bun install
+bun run prisma:generate
+bunx prisma migrate deploy
+bun run dev
+```
 
-## 9) Deployment Notes
+Before handoff or commit:
 
-- Build script runs Prisma generate + db push before Next build.
-- On Vercel, ensure actual values exist (not empty placeholders) for env vars.
-- If runtime shows app error page, check Function Runtime Logs first.
+```bash
+bun run check
+```
+
+This runs lint, TypeScript, and Bun tests. Unit coverage currently includes atomic note saves, crypto v1/v2 compatibility and corruption, Blob URL trust, and safe asset headers.
+
+The checked-in GitHub Actions workflow audits dependencies, uses ephemeral PostgreSQL to replay migrations and check schema parity, then runs lint, typecheck, tests, and a production build. CI and preview environments must never point at production.
+
+## 9) Deployment And Operations
+
+- Back up PostgreSQL and Vercel Blob before migrations, dependency upgrades, and key changes.
+- A PostgreSQL dump does not include Blob object bytes. Preserve Blob objects plus their URL/path manifest separately.
+- Restore first into an isolated environment with the encryption keys from the backup date, deploy migrations, then verify read/write/upload/download/conflict/auth flows.
+- Ordinary `bun run build` generates Prisma Client and builds Next.js without changing the database.
+- Production migration wrappers require `ALLOW_PRODUCTION_MIGRATIONS=1`. Prefer a separate, single-run `bun run prisma:migrate:deploy` release step; `build:production` is available only for environments that intentionally combine build and migration.
+- Preview deployments use separate databases. Do not allow unrelated builds to mutate a shared production database.
+- Production key rotation rules:
+  - Admin cookies carry a keyed fingerprint of the current admin password, so changing `ADMIN_PASSWORD` and redeploying revokes existing admin sessions.
+  - `SESSION_SECRET` rotation invalidates all cookies and is blocked operationally until session-key-encrypted v1 data is migrated.
+  - `DATA_ENCRYPTION_KEY` requires an offline or dual-key re-encryption migration; changing the variable alone makes v2 data unreadable.
+  - Blob and database credentials are rotated provider-side, updated in every runtime, redeployed, verified, and only then revoked.
+- Full v1 inventory and backup/restore commands live in `README.md`.
+- Monitor runtime logs for rate-limit database failures, Blob callback/cleanup failures, and decryption errors.
 
 ## 10) Coding Conventions
 
-- Keep permission checks centralized in `src/lib/space-permission.ts`.
-- Validate API input with `zod`.
-- Persist security-sensitive operations to `AuditLog`.
-- Keep note/asset storage encrypted using helpers in `src/lib/crypto.ts`.
-- Keep DB-fallback asset storage encrypted using helpers in `src/lib/crypto.ts`.
-- Do not expose or commit secrets/tokens.
+- Validate API input with `zod` and keep trust boundaries server-side.
+- Use structured database/URL/crypto APIs; do not reconstruct trusted data with ad hoc strings.
+- Persist security-sensitive actions to `AuditLog` without delaying the response.
+- Preserve encrypted storage for notes and DB fallback assets.
+- Add focused tests for concurrency, authentication, encryption, URL trust, response headers, and failure recovery when those paths change.
+- Keep docs, `.env.example`, migration instructions, and tests synchronized with behavior.
+- Never expose or commit passwords, tokens, connection strings, encryption keys, dumps, or restored production data.

@@ -1,4 +1,5 @@
 import { issueSignedToken, presignUrl, type IssuedSignedToken } from "@vercel/blob";
+import { parseTrustedBlobUrl } from "@/lib/blob-security";
 
 // 签名 token 有效期 1 小时；单个下载直链有效期 10 分钟
 const TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -38,7 +39,11 @@ type PathStyle = "decoded" | "encoded";
 let verifiedStyle: PathStyle | null = null;
 
 function candidatePathnames(blobUrl: string): { style: PathStyle; pathname: string }[] {
-  const encoded = new URL(blobUrl).pathname.slice(1);
+  const trustedUrl = parseTrustedBlobUrl(blobUrl);
+  if (!trustedUrl) {
+    throw new Error("Untrusted Blob URL");
+  }
+  const encoded = trustedUrl.pathname.slice(1);
   let decoded = encoded;
   try {
     decoded = decodeURIComponent(encoded);

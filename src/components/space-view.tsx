@@ -3,6 +3,7 @@
 import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { TopToast, ToastTone } from "@/components/top-toast";
 import { SpaceQr } from "@/components/space-qr";
 import { upload } from "@vercel/blob/client";
@@ -73,6 +74,7 @@ export function SpaceView({
     assetCount: assets.length,
     latestAssetAt: assets[0]?.createdAt ?? null,
   });
+  const hasUnsavedChanges = text !== lastSyncedNoteRef.current;
 
   useEffect(() => {
     remoteStateRef.current = {
@@ -101,12 +103,27 @@ export function SpaceView({
     }
   }, [note, noteUpdatedAt, slug, notify]);
 
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   // 跨设备同步：定时 + 页面重新聚焦时查询轻量状态接口，内容有变化才整页刷新
   const checkRemoteUpdates = useCallback(async () => {
     if (busyRef.current) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
     try {
       const res = await fetch(`/api/spaces/${slug}/state`, { cache: "no-store" });
+      if (res.status === 401) {
+        notify("访问权限已过期，请重新验证；本地未保存文本仍会保留", "info");
+        startRefresh(() => router.refresh());
+        return;
+      }
       if (!res.ok) return;
       const data = (await res.json()) as {
         noteUpdatedAt: string | null;
@@ -126,7 +143,7 @@ export function SpaceView({
     } catch {
       // 网络抖动忽略，等待下一轮
     }
-  }, [slug, router, startRefresh]);
+  }, [slug, router, startRefresh, notify]);
 
   useEffect(() => {
     if (!canRead) return;
@@ -169,40 +186,37 @@ export function SpaceView({
     }
   }
 
-  async function registerBlobAsset(
-    blobUrl: string,
-    originalName: string,
-    mimeType: string,
-    size: number,
-  ): Promise<void> {
-    const res = await fetch(`/api/spaces/${slug}/assets/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        blobUrl,
-        originalName,
-        mimeType,
-        size,
-      }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || `${originalName} 上传登记失败`);
+  async function waitForBlobRegistration(blobUrl: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      try {
+        const res = await fetch(
+          `/api/spaces/${slug}/assets/register?blobUrl=${encodeURIComponent(blobUrl)}`,
+          { cache: "no-store" },
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { registered?: boolean };
+          if (data.registered) return true;
+        }
+      } catch {
+        // Upload already completed; keep polling until the server callback registers it.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 150));
     }
+    return false;
   }
 
   async function uploadOneFile(
     file: File,
     originalName?: string,
     onProgress?: (loaded: number) => void,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const name = originalName || file.name;
     let blobUploaded = false;
     try {
       const blob = await upload(name, file, {
         access: "private",
         handleUploadUrl: "/api/blob/upload",
+        contentType: file.type || "application/octet-stream",
         clientPayload: JSON.stringify({
           slug,
           originalName: name,
@@ -218,16 +232,12 @@ export function SpaceView({
       if (!blob || typeof blob.url !== "string" || blob.url.length === 0) {
         await uploadViaFallbackApi(file, originalName);
         onProgress?.(file.size);
-        return;
+        return true;
       }
 
-      await registerBlobAsset(
-        blob.url,
-        name,
-        file.type || blob.contentType || "application/octet-stream",
-        file.size,
-      );
+      const registered = await waitForBlobRegistration(blob.url);
       onProgress?.(file.size);
+      return registered;
     } catch (error) {
       if (blobUploaded) {
         console.error("[uploadOneFile:register-failed]", error);
@@ -237,6 +247,7 @@ export function SpaceView({
       // 兜底接口没有进度事件，完成时一次性计满
       await uploadViaFallbackApi(file, originalName);
       onProgress?.(file.size);
+      return true;
     }
   }
 
@@ -281,6 +292,14 @@ export function SpaceView({
     });
   }
 
+  async function putNoteWithConflict(content: string, overwriteMessage: string): Promise<Response | null> {
+    let res = await putNote(content, false);
+    if (res.status !== 409) return res;
+    if (!confirm(overwriteMessage)) return null;
+    res = await putNote(content, true);
+    return res;
+  }
+
   // 保存成功后同步冲突基准与轮询基准，避免下次保存误报冲突、轮询把自己的保存当成远端更新
   async function applySaved(res: Response, content: string): Promise<void> {
     const data = (await res.json().catch(() => null)) as { updatedAt?: string } | null;
@@ -295,15 +314,19 @@ export function SpaceView({
     const content = text;
     setBusy(true);
     try {
-      let res = await putNote(content, false);
-      if (res.status === 409) {
-        if (!confirm("其他设备已修改过该文本，确定用当前内容覆盖吗？\n（取消保存后可刷新页面查看最新内容）")) {
-          notify("已取消保存", "info");
-          return;
-        }
-        res = await putNote(content, true);
+      const res = await putNoteWithConflict(
+        content,
+        "其他设备已修改过该文本，确定用当前内容覆盖吗？\n（取消保存后可刷新页面查看最新内容）",
+      );
+      if (!res) {
+        notify("已取消保存", "info");
+        return;
       }
       if (!res.ok) {
+        if (res.status === 401) {
+          startRefresh(() => router.refresh());
+          throw new Error("编辑权限已过期，请重新验证后再保存；本地文本已保留");
+        }
         throw new Error("保存失败，请确认密码权限");
       }
       await applySaved(res, content);
@@ -322,14 +345,24 @@ export function SpaceView({
     }
 
     const previous = text;
-    setText("");
     setBusy(true);
     try {
-      // 清空已经人工确认过，直接覆盖远端
-      const res = await putNote("", true);
+      const res = await putNoteWithConflict(
+        "",
+        "其他设备已更新文本。继续清空会覆盖远端的新内容，确定继续吗？",
+      );
+      if (!res) {
+        notify("已取消清空，本地内容保持不变", "info");
+        return;
+      }
       if (!res.ok) {
+        if (res.status === 401) {
+          startRefresh(() => router.refresh());
+          throw new Error("编辑权限已过期，请重新验证后再清空");
+        }
         throw new Error("清空失败，请重试");
       }
+      setText("");
       await applySaved(res, "");
       notify("文本已清空", "success");
     } catch (error) {
@@ -340,31 +373,47 @@ export function SpaceView({
     }
   }
 
-  async function uploadFiles(fileList: FileList | null) {
-    if (!fileList?.length) {
+  async function uploadFiles(files: File[]) {
+    if (!files.length) {
       return;
     }
-    const files = Array.from(fileList);
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0) || 1;
     const loadedByFile = files.map(() => 0);
     const session = ++uploadSessionRef.current;
     setBusy(true);
     setUploadPct(0);
     try {
-      // 并行上传多个文件，缩短整体等待时间；进度按总字节数聚合
-      await Promise.all(
-        files.map((file, index) =>
-          uploadOneFile(file, undefined, (loaded) => {
-            if (uploadSessionRef.current !== session) return;
-            loadedByFile[index] = Math.min(loaded, file.size);
-            const loadedSum = loadedByFile.reduce((a, b) => a + b, 0);
-            setUploadPct(Math.min(99, Math.round((loadedSum / totalBytes) * 100)));
-          }),
-        ),
-      );
+      const results: PromiseSettledResult<boolean>[] = [];
+      for (let offset = 0; offset < files.length; offset += 3) {
+        const batch = files.slice(offset, offset + 3);
+        results.push(
+          ...(await Promise.allSettled(
+            batch.map((file, batchIndex) => {
+              const index = offset + batchIndex;
+              return uploadOneFile(file, undefined, (loaded) => {
+                if (uploadSessionRef.current !== session) return;
+                loadedByFile[index] = Math.min(loaded, file.size);
+                const loadedSum = loadedByFile.reduce((a, b) => a + b, 0);
+                setUploadPct(Math.min(99, Math.round((loadedSum / totalBytes) * 100)));
+              });
+            }),
+          )),
+        );
+      }
       setUploadPct(100);
-      notify("上传完成，正在同步列表", "success");
       await refreshAfterBlobSync();
+      const failed = results.filter((result) => result.status === "rejected").length;
+      const pendingRegistration = results.filter(
+        (result) => result.status === "fulfilled" && !result.value,
+      ).length;
+      const succeeded = results.length - failed;
+      if (failed > 0) {
+        notify(`已完成 ${succeeded} 个，失败 ${failed} 个；可重新选择失败文件重试`, "error");
+      } else if (pendingRegistration > 0) {
+        notify(`上传完成，${pendingRegistration} 个文件仍在后台登记，将自动同步`, "info");
+      } else {
+        notify("上传完成，列表已同步", "success");
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : "上传失败", "error");
     } finally {
@@ -388,19 +437,23 @@ export function SpaceView({
       return;
     }
     e.preventDefault();
+    if (busyRef.current) {
+      notify("当前操作完成后再粘贴图片", "info");
+      return;
+    }
 
     const session = ++uploadSessionRef.current;
     setBusy(true);
     setUploadPct(0);
     try {
       const pastedName = `pasted-${Date.now()}.png`;
-      await uploadOneFile(file, pastedName, (loaded) => {
+      const registered = await uploadOneFile(file, pastedName, (loaded) => {
         if (uploadSessionRef.current !== session) return;
         setUploadPct(Math.min(99, Math.round((loaded / (file.size || 1)) * 100)));
       });
       setUploadPct(100);
-      notify("图片已上传，正在同步列表", "success");
       await refreshAfterBlobSync();
+      notify(registered ? "图片已上传并同步" : "图片已上传，后台登记完成后将自动同步", registered ? "success" : "info");
     } catch (error) {
       notify(error instanceof Error ? error.message : "图片保存失败", "error");
     } finally {
@@ -437,6 +490,21 @@ export function SpaceView({
   return (
     <section className="space-y-4">
       {toast && <TopToast message={toast.message} onClose={() => setToast(null)} tone={toast.tone} />}
+
+      <div className="flex items-center justify-between">
+        <Link
+          className="btn btn-ghost"
+          href="/"
+          onClick={(event) => {
+            if (hasUnsavedChanges && !confirm("当前文本尚未保存，确定返回首页吗？")) {
+              event.preventDefault();
+            }
+          }}
+        >
+          返回首页
+        </Link>
+        {hasUnsavedChanges && <span className="text-xs text-[var(--ink-1)]">有未保存修改</span>}
+      </div>
 
       <header className="panel p-5">
         <div className="flex items-start justify-between gap-3">
@@ -540,15 +608,20 @@ export function SpaceView({
               value={text}
             />
             {canWrite && (
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button className="btn btn-primary" disabled={busy} onClick={saveNote} type="button">
                   保存文本
                 </button>
-                <label className="btn btn-ghost">
+                <label className={`btn btn-ghost ${pending ? "pointer-events-none opacity-60" : ""}`}>
                   上传文件/图片/视频
                   <input
                     className="hidden"
-                    onChange={(e) => uploadFiles(e.target.files)}
+                    disabled={pending}
+                    onChange={(event) => {
+                      const selected = Array.from(event.currentTarget.files || []);
+                      event.currentTarget.value = "";
+                      void uploadFiles(selected);
+                    }}
                     type="file"
                     multiple
                   />

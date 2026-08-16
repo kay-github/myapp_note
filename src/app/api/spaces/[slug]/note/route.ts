@@ -6,11 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { getClientIp } from "@/lib/request";
 import { writeAudit } from "@/lib/audit";
 import { encryptText } from "@/lib/crypto";
+import { saveNoteAtomically } from "@/lib/note-save";
 
 const bodySchema = z.object({
   content: z.string().max(MAX_NOTE_LENGTH),
-  // 客户端加载笔记时的 updatedAt，用于检测其他设备的并发修改；不传则跳过检测（兼容旧客户端）
-  baseUpdatedAt: z.string().nullable().optional(),
+  baseUpdatedAt: z.string().datetime().nullable(),
   force: z.boolean().optional(),
 });
 
@@ -32,30 +32,16 @@ export async function PUT(req: Request, { params }: Context) {
     return new NextResponse("Write permission required", { status: 401 });
   }
 
-  if (!parsed.data.force && parsed.data.baseUpdatedAt !== undefined) {
-    const existing = await prisma.note.findUnique({
-      where: { spaceId: space.id },
-      select: { updatedAt: true },
-    });
-    if (existing) {
-      const base = parsed.data.baseUpdatedAt ? Date.parse(parsed.data.baseUpdatedAt) : Number.NaN;
-      if (Number.isNaN(base) || existing.updatedAt.getTime() !== base) {
-        return new NextResponse("Note was modified on another device", { status: 409 });
-      }
-    }
-  }
-
-  const saved = await prisma.note.upsert({
-    where: { spaceId: space.id },
-    create: {
-      spaceId: space.id,
-      content: encryptText(parsed.data.content),
-    },
-    update: {
-      content: encryptText(parsed.data.content),
-    },
-    select: { updatedAt: true },
+  const encryptedContent = encryptText(parsed.data.content);
+  const savedUpdatedAt = await saveNoteAtomically({
+    spaceId: space.id,
+    encryptedContent,
+    baseUpdatedAt: parsed.data.baseUpdatedAt ? new Date(parsed.data.baseUpdatedAt) : null,
+    force: parsed.data.force ?? false,
   });
+  if (!savedUpdatedAt) {
+    return new NextResponse("Note was modified on another device", { status: 409 });
+  }
 
   await writeAudit({
     action: "note_update",
@@ -64,5 +50,5 @@ export async function PUT(req: Request, { params }: Context) {
     spaceId: space.id,
   });
 
-  return NextResponse.json({ ok: true, updatedAt: saved.updatedAt.toISOString() });
+  return NextResponse.json({ ok: true, updatedAt: savedUpdatedAt.toISOString() });
 }

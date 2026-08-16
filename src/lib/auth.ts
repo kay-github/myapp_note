@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -41,16 +41,16 @@ export function spaceCookieName(slug: string): string {
 }
 
 // 会话 cookie 绑定当前密码哈希的指纹：管理员改密后所有旧会话立即失效
-function passwordFingerprint(passwordHash: string): string {
-  return createHash("sha256").update(passwordHash).digest("hex").slice(0, 16);
+function secretFingerprint(secret: string): string {
+  return createHmac("sha256", APP_CONFIG.sessionSecret).update(secret).digest("hex").slice(0, 16);
 }
 
 export async function setSpaceSession(slug: string, passwordHash: string): Promise<void> {
   const store = await cookies();
-  const payload = `${slug}:${expiresAt()}:${passwordFingerprint(passwordHash)}`;
+  const payload = `${slug}:${expiresAt()}:${secretFingerprint(passwordHash)}`;
   store.set(spaceCookieName(slug), buildToken(payload), {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     secure: process.env.NODE_ENV === "production",
     maxAge: APP_CONFIG.sessionDays * 24 * 60 * 60,
@@ -85,7 +85,7 @@ export async function canWriteWithSpaceCookie(slug: string, passwordHash: string
   }
 
   // 指纹不匹配说明密码已被修改（或旧格式 cookie），要求重新验证
-  if (fingerprint !== passwordFingerprint(passwordHash)) {
+  if (fingerprint !== secretFingerprint(passwordHash)) {
     return false;
   }
 
@@ -94,10 +94,10 @@ export async function canWriteWithSpaceCookie(slug: string, passwordHash: string
 
 export async function setAdminSession(): Promise<void> {
   const store = await cookies();
-  const payload = `admin:${expiresAt()}`;
+  const payload = `admin:${expiresAt()}:${secretFingerprint(APP_CONFIG.adminPassword)}`;
   store.set(ADMIN_COOKIE, buildToken(payload), {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     secure: process.env.NODE_ENV === "production",
     maxAge: APP_CONFIG.sessionDays * 24 * 60 * 60,
@@ -121,7 +121,12 @@ export async function isAdminAuthed(): Promise<boolean> {
     return false;
   }
 
-  const [name, expireText] = payload.split(":");
+  const [name, expireText, fingerprint] = payload.split(":");
   const expire = Number(expireText);
-  return name === "admin" && !Number.isNaN(expire) && expire > Date.now();
+  return (
+    name === "admin" &&
+    !Number.isNaN(expire) &&
+    expire > Date.now() &&
+    fingerprint === secretFingerprint(APP_CONFIG.adminPassword)
+  );
 }

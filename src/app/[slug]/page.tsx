@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ensureDefaultSpace } from "@/lib/bootstrap";
 import { APP_CONFIG } from "@/lib/config";
@@ -46,12 +45,6 @@ export default async function SpacePage({ params }: Props) {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-4 flex items-center justify-between">
-        <Link className="btn btn-ghost" href="/">
-          返回首页
-        </Link>
-      </div>
-
       <SpaceView
         slug={space.slug}
         title={space.title}
